@@ -3,6 +3,14 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+def _login(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/register",
+        json={"username": "endpoint_user", "password": "writer123", "confirm_password": "writer123"},
+    )
+    assert response.status_code == 200
+
+
 def test_healthz() -> None:
     client = TestClient(app)
 
@@ -14,6 +22,7 @@ def test_healthz() -> None:
 
 def test_create_poetry_task_forces_prompt_only_policy() -> None:
     client = TestClient(app)
+    _login(client)
 
     response = client.post(
         "/v1/writing-tasks",

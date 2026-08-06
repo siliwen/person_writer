@@ -25,6 +25,15 @@ type StyleProfile = {
   profile: Record<string, unknown>;
 };
 
+type CurrentUser = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  mode: string;
+  phone_number: string | null;
+  phone_verified: boolean;
+};
+
 type StyleDraftView = {
   plainSummary: string;
   dimensions: Array<{
@@ -87,6 +96,19 @@ async function parseJson<T>(response: Response): Promise<T> {
 }
 
 export function WritingWorkspace() {
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneDebugCode, setPhoneDebugCode] = useState("");
+  const [accountError, setAccountError] = useState("");
+  const [accountStatus, setAccountStatus] = useState("");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [startMode, setStartMode] = useState<StartMode>("create_style");
   const [startModeTouched, setStartModeTouched] = useState(false);
@@ -109,7 +131,7 @@ export function WritingWorkspace() {
   const [rewriteDialogParagraphId, setRewriteDialogParagraphId] = useState("");
   const [rewriteInstruction, setRewriteInstruction] = useState("");
   const [deleteStyleError, setDeleteStyleError] = useState("");
-  const [status, setStatus] = useState("当前为 Demo 用户模式：MVP1 暂不做真实注册登录。");
+  const [status, setStatus] = useState("未登录也可以预览工作台；上传作品、保存风格和生成文章需要先注册或登录。");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [uploadError, setUploadError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
@@ -143,23 +165,44 @@ export function WritingWorkspace() {
   }, []);
 
   async function refreshAll() {
-    await Promise.all([loadMaterials(), loadStyles(), loadModelStatus()]);
+    const user = await loadCurrentUser();
+    await loadModelStatus();
+    if (user) {
+      await Promise.all([loadMaterials(), loadStyles()]);
+    } else {
+      setMaterials([]);
+      setStyles([]);
+      setSelectedStyleId("");
+      setStartMode("create_style");
+    }
+  }
+
+  async function loadCurrentUser(): Promise<CurrentUser | null> {
+    const response = await fetch(`${apiBase()}/v1/me`, { credentials: "include" });
+    if (response.status === 401) {
+      setCurrentUser(null);
+      return null;
+    }
+    const user = await parseJson<CurrentUser>(response);
+    setCurrentUser(user);
+    setPhoneNumber(user.phone_number ?? "");
+    return user;
   }
 
   async function loadMaterials() {
-    const response = await fetch(`${apiBase()}/v1/materials`);
+    const response = await fetch(`${apiBase()}/v1/materials`, { credentials: "include" });
     const body = await parseJson<{ materials: Material[] }>(response);
     setMaterials(body.materials);
   }
 
 
   async function loadModelStatus() {
-    const response = await fetch(`${apiBase()}/v1/model-status`);
+    const response = await fetch(`${apiBase()}/v1/model-status`, { credentials: "include" });
     const body = await parseJson<ModelStatus>(response);
     setModelStatus(body);
   }
   async function loadStyles() {
-    const response = await fetch(`${apiBase()}/v1/style-profiles`);
+    const response = await fetch(`${apiBase()}/v1/style-profiles`, { credentials: "include" });
     const body = await parseJson<{ styles: StyleProfile[] }>(response);
     setStyles(body.styles);
     setSelectedStyleId((current) => current || body.styles[0]?.id || "");
@@ -172,6 +215,9 @@ export function WritingWorkspace() {
   }
 
   async function uploadMaterials() {
+    if (!requireAuth()) {
+      return;
+    }
     setUploadError("");
     setAnalysisError("");
     setConfirmError("");
@@ -195,6 +241,7 @@ export function WritingWorkspace() {
       Array.from(files).forEach((file) => form.append("files", file));
       const response = await fetch(`${apiBase()}/v1/materials/upload`, {
         method: "POST",
+        credentials: "include",
         body: form
       });
       const body = await parseJson<{ materials: Material[] }>(response);
@@ -208,6 +255,7 @@ export function WritingWorkspace() {
       setBusyAction("analysis");
       const analysisResponse = await fetch(`${apiBase()}/v1/style-analysis-jobs`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ material_ids: body.materials.map((item) => item.id) })
       });
@@ -231,6 +279,9 @@ export function WritingWorkspace() {
   }
 
   async function confirmStyle() {
+    if (!requireAuth()) {
+      return;
+    }
     setConfirmError("");
     if (!styleJob) {
       setConfirmError("还没有待确认的风格分析草案。");
@@ -261,6 +312,7 @@ export function WritingWorkspace() {
     try {
       const response = await fetch(`${apiBase()}/v1/style-profiles/confirm`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ job_id: styleJob.id, name: normalizedStyleName, profile })
       });
@@ -282,6 +334,9 @@ export function WritingWorkspace() {
   }
 
   async function createWritingTask() {
+    if (!requireAuth()) {
+      return;
+    }
     setWritingError("");
     if (!selectedStyleId) {
       setWritingError("请先从风格库选择一个 active 风格。");
@@ -309,6 +364,7 @@ export function WritingWorkspace() {
     try {
       const response = await fetch(`${apiBase()}/v1/writing-tasks`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           style_profile_id: selectedStyleId,
@@ -344,6 +400,9 @@ export function WritingWorkspace() {
   }
 
   async function deleteSelectedStyle() {
+    if (!requireAuth()) {
+      return;
+    }
     setDeleteStyleError("");
     if (!selectedStyle) {
       setDeleteStyleError("请先选择要删除的风格。");
@@ -357,7 +416,8 @@ export function WritingWorkspace() {
     setStatus(`正在删除风格“${selectedStyle.name}”……`);
     try {
       const response = await fetch(`${apiBase()}/v1/style-profiles/${selectedStyle.id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        credentials: "include"
       });
       await parseJson<{ id: string; status: string }>(response);
       const nextStyles = styles.filter((style) => style.id !== selectedStyle.id);
@@ -383,6 +443,9 @@ export function WritingWorkspace() {
   }
 
   async function rewriteParagraph() {
+    if (!requireAuth()) {
+      return;
+    }
     setRewriteError("");
     if (!document) {
       setRewriteError("请选择要重写的自然段。");
@@ -406,6 +469,7 @@ export function WritingWorkspace() {
         `${apiBase()}/v1/documents/${document.id}/paragraphs/${rewriteDialogParagraphId}/rewrite`,
         {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ instruction })
         }
@@ -439,16 +503,154 @@ export function WritingWorkspace() {
     setRewriteError("");
   }
 
+  function requireAuth() {
+    if (currentUser) {
+      return true;
+    }
+    setAuthMode("login");
+    setAuthDialogOpen(true);
+    setAuthError("");
+    setStatus("请先注册或登录，再继续使用作品上传、风格库和文章生成。");
+    return false;
+  }
+
+  async function submitAuth() {
+    setAuthError("");
+    if (!authUsername.trim()) {
+      setAuthError("请填写用户名。");
+      return;
+    }
+    if (!authPassword) {
+      setAuthError("请填写密码。");
+      return;
+    }
+    if (authMode === "register" && authPassword !== authConfirmPassword) {
+      setAuthError("两次输入的密码不一致。");
+      return;
+    }
+    setBusyAction("confirm");
+    try {
+      const response = await fetch(`${apiBase()}/v1/auth/${authMode === "login" ? "login" : "register"}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: authUsername.trim(),
+          password: authPassword,
+          confirm_password: authConfirmPassword,
+        }),
+      });
+      const body = await parseJson<{ user: CurrentUser }>(response);
+      setCurrentUser(body.user);
+      setPhoneNumber(body.user.phone_number ?? "");
+      setAuthDialogOpen(false);
+      setAuthPassword("");
+      setAuthConfirmPassword("");
+      setStatus(`已登录：${body.user.username}。可以继续使用工作台。`);
+      await Promise.all([loadMaterials(), loadStyles()]);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function logout() {
+    setBusyAction("confirm");
+    try {
+      await fetch(`${apiBase()}/v1/auth/logout`, { method: "POST", credentials: "include" });
+      setCurrentUser(null);
+      setMaterials([]);
+      setStyles([]);
+      setSelectedStyleId("");
+      setDocument(null);
+      setGenerationCount(0);
+      setAccountDialogOpen(false);
+      setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function sendPhoneCode() {
+    setAccountError("");
+    setAccountStatus("");
+    if (!requireAuth()) {
+      return;
+    }
+    setBusyAction("confirm");
+    try {
+      const response = await fetch(`${apiBase()}/v1/account/phone/send-code`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_number: phoneNumber.trim() }),
+      });
+      const body = await parseJson<{ debug_code: string }>(response);
+      setPhoneDebugCode(body.debug_code);
+      setAccountStatus("测试验证码已生成。当前版本不真实发送短信，请使用下方显示的验证码。");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function bindPhoneNumber() {
+    setAccountError("");
+    setAccountStatus("");
+    if (!requireAuth()) {
+      return;
+    }
+    setBusyAction("confirm");
+    try {
+      const response = await fetch(`${apiBase()}/v1/account/phone/bind`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_number: phoneNumber.trim(), code: phoneCode.trim() }),
+      });
+      const body = await parseJson<{ user: CurrentUser }>(response);
+      setCurrentUser(body.user);
+      setPhoneDebugCode("");
+      setPhoneCode("");
+      setAccountStatus("手机号已绑定。");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
     <main className="shell">
       <section className="hero">
         <div>
           <h1>个人风格写作 SaaS · MVP1</h1>
           <p>
-            先用固定 Demo 用户打通个人风格写作闭环：作品上传、风格分析、用户确认、风格库、风格写作和自然段重写。
+            用户可以上传参考作品，建立自己的风格库，并按选定风格生成、修改文章。
           </p>
         </div>
-        <div className="badge">Demo 用户模式 / 组织与余额 MVP2</div>
+        <div className="hero-actions">
+          <div className="badge">{currentUser ? `已登录：${currentUser.username}` : "未登录可预览 / 创建资产需登录"}</div>
+          {currentUser ? (
+            <button className="secondary" type="button" onClick={() => setAccountDialogOpen(true)}>
+              账号
+            </button>
+          ) : (
+            <button
+              className="primary"
+              type="button"
+              onClick={() => {
+                setAuthMode("login");
+                setAuthDialogOpen(true);
+                setAuthError("");
+              }}
+            >
+              登录 / 注册
+            </button>
+          )}
+        </div>
       </section>
 
       <section className="status-bar">{busy ? "处理中…… " : ""}{status}<span className="model-chip">模型：{modelStatus ? `${modelStatus.mode} / ${modelStatus.model_name} / ${modelStatus.fallback_behavior}` : "读取中"}</span></section>
@@ -493,6 +695,9 @@ export function WritingWorkspace() {
               className={`choice-card ${startMode === "use_existing" ? "selected" : ""}`}
               type="button"
               onClick={() => {
+                if (!requireAuth()) {
+                  return;
+                }
                 setStartMode("use_existing");
                 setStartModeTouched(true);
                 setSelectedStyleId((current) => current || styles[0]?.id || "");
@@ -791,6 +996,107 @@ export function WritingWorkspace() {
           ) : null}
         </div>
       </section>
+      {authDialogOpen ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+          <div className="modal-card auth-card">
+            <div className="modal-header">
+              <h3 id="auth-dialog-title">{authMode === "login" ? "登录账号" : "注册账号"}</h3>
+              <button className="modal-close" type="button" disabled={busy} onClick={() => setAuthDialogOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="auth-tabs">
+              <button
+                className={authMode === "login" ? "selected" : ""}
+                type="button"
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError("");
+                }}
+              >
+                登录
+              </button>
+              <button
+                className={authMode === "register" ? "selected" : ""}
+                type="button"
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthError("");
+                }}
+              >
+                注册
+              </button>
+            </div>
+            <p className="small">用户名 6–32 位，只允许英文字母、数字、下划线。密码 8–64 位，至少包含 1 个字母和 1 个数字。</p>
+            <div className="field">
+              <label>用户名</label>
+              <input value={authUsername} onChange={(event) => setAuthUsername(event.target.value)} />
+            </div>
+            <div className="field">
+              <label>密码</label>
+              <input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
+            </div>
+            {authMode === "register" ? (
+              <div className="field">
+                <label>确认密码</label>
+                <input
+                  type="password"
+                  value={authConfirmPassword}
+                  onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                />
+              </div>
+            ) : null}
+            <button className="primary" type="button" disabled={busy} onClick={submitAuth}>
+              {busy ? "处理中……" : authMode === "login" ? "登录" : "注册并登录"}
+            </button>
+            <button className="link-button" type="button" onClick={() => setAuthError("手机号找回密码入口已预留，完整流程后续接入。")}>
+              忘记密码？
+            </button>
+            {authError ? <p className="inline-error" role="alert">{authError}</p> : null}
+          </div>
+        </div>
+      ) : null}
+      {accountDialogOpen && currentUser ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title">
+          <div className="modal-card auth-card">
+            <div className="modal-header">
+              <h3 id="account-dialog-title">账号设置</h3>
+              <button className="modal-close" type="button" disabled={busy} onClick={() => setAccountDialogOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="account-summary">
+              <span>用户名</span>
+              <strong>{currentUser.username}</strong>
+              <span>手机号</span>
+              <strong>{currentUser.phone_number ? `${currentUser.phone_number}（已绑定）` : "未绑定"}</strong>
+            </div>
+            <div className="field">
+              <label>绑定手机号</label>
+              <input value={phoneNumber} placeholder="例如：13800138000" onChange={(event) => setPhoneNumber(event.target.value)} />
+              <small>当前只支持中国大陆手机号。验证码为测试模式，不真实发送短信。</small>
+            </div>
+            <button className="secondary" type="button" disabled={busy} onClick={sendPhoneCode}>
+              {busy ? "处理中……" : "发送测试验证码"}
+            </button>
+            {phoneDebugCode ? <p className="inline-status">测试验证码：{phoneDebugCode}</p> : null}
+            <div className="field">
+              <label>验证码</label>
+              <input value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} />
+            </div>
+            <div className="modal-actions">
+              <button className="danger-secondary" type="button" disabled={busy} onClick={logout}>
+                退出登录
+              </button>
+              <button className="primary" type="button" disabled={busy} onClick={bindPhoneNumber}>
+                绑定手机号
+              </button>
+            </div>
+            {accountStatus ? <p className="inline-status">{accountStatus}</p> : null}
+            {accountError ? <p className="inline-error" role="alert">{accountError}</p> : null}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

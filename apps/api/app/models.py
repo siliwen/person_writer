@@ -17,9 +17,28 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    username_normalized: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), nullable=False, default="demo")
+    phone_number: Mapped[str | None] = mapped_column(String(11), unique=True, index=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class PhoneVerificationCode(Base):
+    __tablename__ = "phone_verification_codes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    phone_number: Mapped[str] = mapped_column(String(11), index=True, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Material(Base):

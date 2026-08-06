@@ -10,6 +10,22 @@ from app.core.model_gateway import ModelGateway, ModelResult
 
 from app.main import app
 
+
+_login_counter = 0
+
+
+def _ensure_logged_in(client: TestClient) -> None:
+    global _login_counter
+    if client.cookies.get("pw_session"):
+        return
+    _login_counter += 1
+    username = f"testuser_{_login_counter:04d}"
+    response = client.post(
+        "/v1/auth/register",
+        json={"username": username, "password": "writer123", "confirm_password": "writer123"},
+    )
+    assert response.status_code == 200
+
 def _force_gateway_fallback(monkeypatch) -> None:
     def fake_generate(self, *, messages, purpose, fallback):
         return ModelResult(
@@ -39,6 +55,7 @@ def _make_minimal_docx(paragraphs: list[str]) -> bytes:
 
 
 def _upload_material(client: TestClient, filename: str, content: str) -> str:
+    _ensure_logged_in(client)
     response = client.post(
         "/v1/materials/upload",
         data={"genre": "散文"},
@@ -416,6 +433,7 @@ def test_local_network_frontend_origin_can_call_upload_api() -> None:
 
 def test_user_can_upload_docx_and_get_paragraphs() -> None:
     client = TestClient(app)
+    _ensure_logged_in(client)
     docx = _make_minimal_docx(["门口有一把旧椅子。", "风从巷子里过来。"])
 
     response = client.post(

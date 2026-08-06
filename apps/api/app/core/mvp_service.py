@@ -61,7 +61,6 @@ def create_material(
     source_filename: str | None,
     content: str,
 ) -> models.Material:
-    ensure_demo_user(db)
     normalized_title = title.strip() or (source_filename or "未命名作品")
     normalized_genre = genre.strip() or "散文"
     paragraphs = split_paragraphs(content)
@@ -94,7 +93,6 @@ def create_material(
 
 
 def list_materials(db: Session, *, user_id: str) -> list[models.Material]:
-    ensure_demo_user(db)
     return list(
         db.scalars(
             select(models.Material)
@@ -110,7 +108,6 @@ def build_style_draft(materials: list[models.Material]) -> dict[str, Any]:
 
 
 def create_style_analysis_job(db: Session, *, user_id: str, material_ids: list[str]) -> models.StyleAnalysisJob:
-    ensure_demo_user(db)
     materials = _require_user_materials(db, user_id=user_id, material_ids=material_ids)
     job = models.StyleAnalysisJob(
         id=new_id("style_job"),
@@ -126,7 +123,6 @@ def create_style_analysis_job(db: Session, *, user_id: str, material_ids: list[s
 
 
 def get_style_analysis_job(db: Session, *, user_id: str, job_id: str) -> models.StyleAnalysisJob:
-    ensure_demo_user(db)
     job = db.get(models.StyleAnalysisJob, job_id)
     if not job or job.user_id != user_id:
         raise HTTPException(status_code=404, detail="style analysis job not found")
@@ -184,7 +180,6 @@ def confirm_style_profile(
 
 
 def list_style_profiles(db: Session, *, user_id: str) -> list[models.StyleProfile]:
-    ensure_demo_user(db)
     return list(
         db.scalars(
             select(models.StyleProfile)
@@ -195,7 +190,6 @@ def list_style_profiles(db: Session, *, user_id: str) -> list[models.StyleProfil
 
 
 def delete_style_profile(db: Session, *, user_id: str, style_profile_id: str) -> models.StyleProfile:
-    ensure_demo_user(db)
     style = db.get(models.StyleProfile, style_profile_id)
     if not style or style.user_id != user_id:
         raise HTTPException(status_code=404, detail="style profile not found")
@@ -233,7 +227,6 @@ def create_writing(
     requested_mode: GenerationMode | str | None = None,
     rag_snippets: list[str] | None = None,
 ) -> CreatedWriting:
-    ensure_demo_user(db)
     style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
     prompt = compose_prompt(
         task=task_input,
@@ -305,7 +298,6 @@ def rewrite_paragraph(
     paragraph_id: str,
     instruction: str,
 ) -> models.Document:
-    ensure_demo_user(db)
     document = db.scalar(
         select(models.Document)
         .where(models.Document.id == document_id, models.Document.user_id == user_id)

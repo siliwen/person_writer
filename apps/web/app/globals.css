@@ -70,6 +70,13 @@ button {
   white-space: nowrap;
 }
 
+.hero-actions {
+  align-items: flex-end;
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 380px minmax(0, 1fr);
@@ -402,6 +409,10 @@ button {
   .hero {
     display: grid;
   }
+
+  .hero-actions {
+    justify-items: start;
+  }
 }
 
 .inline-status {
@@ -590,7 +601,59 @@ button {
   justify-content: flex-end;
 }
 
+.auth-card {
+  max-width: 460px;
+}
+
+.auth-tabs {
+  background: #fffdfa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+}
+
+.auth-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  padding: 9px 10px;
+}
+
+.auth-tabs button.selected {
+  background: #fff4df;
+  color: var(--accent-strong);
+}
+
+.link-button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  padding: 0;
+  text-align: left;
+}
+
+.account-summary {
+  background: #fffdfa;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 6px 12px;
+  grid-template-columns: auto 1fr;
+  padding: 12px;
+}
+
+.account-summary span {
+  color: var(--muted);
+}
+
 @media (max-width: 960px) {
+  .hero-actions {
+    justify-items: start;
+  }
+
   .style-select-row {
     grid-template-columns: 1fr;
   }

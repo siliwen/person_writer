@@ -4,13 +4,21 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import models
 from app.core.generation_policy import GenerationMode
+from app.core.auth_service import (
+    bind_phone,
+    clear_session_cookie,
+    current_user_from_request,
+    register_user,
+    send_phone_bind_code,
+    set_session_cookie,
+)
 from app.core.model_gateway import ModelGateway
 from app.core.mvp_service import (
     DEMO_USER_ID,
@@ -19,7 +27,6 @@ from app.core.mvp_service import (
     create_style_analysis_job,
     create_writing,
     delete_style_profile,
-    ensure_demo_user,
     get_style_analysis_job,
     list_materials,
     list_style_profiles,
@@ -112,6 +119,40 @@ class RewriteParagraphRequest(BaseModel):
     instruction: str
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    confirm_password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class PhoneCodeRequest(BaseModel):
+    phone_number: str
+
+
+class BindPhoneRequest(BaseModel):
+    phone_number: str
+    code: str
+
+
+class PasswordResetSendCodeRequest(BaseModel):
+    phone_number: str
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    phone_number: str
+    code: str
+    new_password: str
+
+
+def require_current_user(request: Request, db: Session = Depends(get_db)) -> models.User:
+    return current_user_from_request(db, request)
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -130,10 +171,65 @@ def model_status() -> dict[str, Any]:
         "fallback_behavior": "disabled" if gateway.mode == "qwen" else "enabled_on_missing_key_or_call_failure",
     }
 
+@app.post("/v1/auth/register")
+def register(request: RegisterRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = register_user(
+        db,
+        username=request.username,
+        password=request.password,
+        confirm_password=request.confirm_password,
+    )
+    set_session_cookie(response, user)
+    return {"user": user_to_dict(user)}
+
+
+@app.post("/v1/auth/login")
+def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
+    from app.core.auth_service import authenticate_user
+
+    user = authenticate_user(db, username=request.username, password=request.password)
+    set_session_cookie(response, user)
+    return {"user": user_to_dict(user)}
+
+
+@app.post("/v1/auth/logout")
+def logout(response: Response) -> dict[str, str]:
+    clear_session_cookie(response)
+    return {"status": "ok"}
+
+
 @app.get("/v1/me")
-def current_demo_user(db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = ensure_demo_user(db)
-    return {"user_id": user.id, "display_name": user.display_name, "mode": user.mode}
+def current_user(user: models.User = Depends(require_current_user)) -> dict[str, Any]:
+    return user_to_dict(user)
+
+
+@app.post("/v1/account/phone/send-code")
+def send_phone_code(
+    request: PhoneCodeRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return send_phone_bind_code(db, user=user, phone_number=request.phone_number)
+
+
+@app.post("/v1/account/phone/bind")
+def bind_account_phone(
+    request: BindPhoneRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    updated = bind_phone(db, user=user, phone_number=request.phone_number, code=request.code)
+    return {"user": user_to_dict(updated)}
+
+
+@app.post("/v1/auth/password-reset/send-code", status_code=501)
+def password_reset_send_code(_: PasswordResetSendCodeRequest) -> dict[str, str]:
+    return {"status": "not_implemented", "message": "Password reset by phone is reserved."}
+
+
+@app.post("/v1/auth/password-reset/confirm", status_code=501)
+def password_reset_confirm(_: PasswordResetConfirmRequest) -> dict[str, str]:
+    return {"status": "not_implemented", "message": "Password reset by phone is reserved."}
 
 
 @app.post("/v1/organizations/register-intent", status_code=501)
@@ -146,6 +242,7 @@ async def upload_materials(
     genre: str = Form("散文"),
     title: str = Form(""),
     files: list[UploadFile] = File(...),
+    user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     created = []
@@ -154,7 +251,7 @@ async def upload_materials(
         content = extract_upload_text(file.filename or "upload.txt", data)
         material = create_material(
             db,
-            user_id=DEMO_USER_ID,
+            user_id=user.id,
             title=title if len(files) == 1 else "",
             genre=genre,
             source_type="upload",
@@ -162,30 +259,45 @@ async def upload_materials(
             content=content,
         )
         created.append(material_to_dict(material, include_paragraphs=True))
-    return {"user_id": DEMO_USER_ID, "materials": created}
+    return {"user_id": user.id, "materials": created}
 
 
 @app.get("/v1/materials")
-def get_materials(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return {"user_id": DEMO_USER_ID, "materials": [material_to_dict(item) for item in list_materials(db, user_id=DEMO_USER_ID)]}
+def get_materials(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return {"user_id": user.id, "materials": [material_to_dict(item) for item in list_materials(db, user_id=user.id)]}
 
 
 @app.post("/v1/style-analysis-jobs")
-def create_style_job(request: CreateStyleAnalysisJobRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
-    job = create_style_analysis_job(db, user_id=DEMO_USER_ID, material_ids=request.material_ids)
+def create_style_job(
+    request: CreateStyleAnalysisJobRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    job = create_style_analysis_job(db, user_id=user.id, material_ids=request.material_ids)
     return style_job_to_dict(job)
 
 
 @app.get("/v1/style-analysis-jobs/{job_id}")
-def get_style_job(job_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return style_job_to_dict(get_style_analysis_job(db, user_id=DEMO_USER_ID, job_id=job_id))
+def get_style_job(
+    job_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return style_job_to_dict(get_style_analysis_job(db, user_id=user.id, job_id=job_id))
 
 
 @app.post("/v1/style-profiles/confirm")
-def confirm_style(request: ConfirmStyleProfileRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+def confirm_style(
+    request: ConfirmStyleProfileRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     style = confirm_style_profile(
         db,
-        user_id=DEMO_USER_ID,
+        user_id=user.id,
         job_id=request.job_id,
         name=request.name,
         profile=request.profile,
@@ -194,13 +306,20 @@ def confirm_style(request: ConfirmStyleProfileRequest, db: Session = Depends(get
 
 
 @app.get("/v1/style-profiles")
-def get_style_profiles(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return {"user_id": DEMO_USER_ID, "styles": [style_profile_to_dict(item) for item in list_style_profiles(db, user_id=DEMO_USER_ID)]}
+def get_style_profiles(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return {"user_id": user.id, "styles": [style_profile_to_dict(item) for item in list_style_profiles(db, user_id=user.id)]}
 
 
 @app.delete("/v1/style-profiles/{style_profile_id}")
-def delete_style(style_profile_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    style = delete_style_profile(db, user_id=DEMO_USER_ID, style_profile_id=style_profile_id)
+def delete_style(
+    style_profile_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    style = delete_style_profile(db, user_id=user.id, style_profile_id=style_profile_id)
     return {"id": style.id, "user_id": style.user_id, "status": style.status}
 
 
@@ -225,11 +344,15 @@ def compose_prompt_endpoint(request: ComposePromptRequest) -> dict[str, Any]:
 
 
 @app.post("/v1/writing-tasks")
-def create_writing_task(request: CreateWritingTaskRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_writing_task(
+    request: CreateWritingTaskRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     if request.style_profile_id:
         created = create_writing(
             db,
-            user_id=DEMO_USER_ID,
+            user_id=user.id,
             style_profile_id=request.style_profile_id,
             task_input=request.task.to_domain(),
             requested_mode=request.requested_mode,
@@ -260,9 +383,15 @@ def create_writing_task(request: CreateWritingTaskRequest, db: Session = Depends
 
 
 @app.get("/v1/writing-tasks/{task_id}")
-def get_writing_task(task_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_writing_task(
+    task_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     task = db.get(models.WritingTask, task_id)
     if task:
+        if task.user_id != user.id:
+            raise HTTPException(status_code=404, detail="writing task not found")
         document = db.get(models.Document, task.document_id) if task.document_id else None
         return writing_task_to_dict(task, document=document)
 
@@ -286,17 +415,30 @@ def rewrite_document_paragraph(
     document_id: str,
     paragraph_id: str,
     request: RewriteParagraphRequest,
+    user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     document = rewrite_paragraph(
         db,
-        user_id=DEMO_USER_ID,
+        user_id=user.id,
         document_id=document_id,
         paragraph_id=paragraph_id,
         instruction=request.instruction,
     )
     db.refresh(document, attribute_names=["paragraphs"])
     return document_to_dict(document)
+
+
+def user_to_dict(user: models.User) -> dict[str, Any]:
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "mode": user.mode,
+        "phone_number": user.phone_number,
+        "phone_verified": user.phone_verified_at is not None,
+        "created_at": user.created_at.isoformat(),
+    }
 
 
 def material_to_dict(material: models.Material, *, include_paragraphs: bool = False) -> dict[str, Any]:
