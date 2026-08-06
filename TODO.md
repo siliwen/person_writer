@@ -6,9 +6,9 @@
 
 ## 当前目标
 
-MVP1 先不做真实注册、组织和余额，使用固定 Demo User 打通个人风格写作闭环：
+MVP1.1 已补真实个人用户系统，当前目标是在用户数据隔离下继续打磨个人风格写作闭环：
 
-Demo User → 二选一开始：上传多篇相似作品并自动分析风格后确认保存，或直接选择已有风格 → 选择风格和贴近程度生成文章 → 在正文中按自然段原地重写。
+未登录预览工作台 → 注册/登录 → 二选一开始：上传多篇相似作品并自动分析风格后确认保存，或直接选择已有风格 → 选择风格和贴近程度生成文章 → 在正文中按自然段原地重写。
 
 ## 阶段 0：评测与产品决策
 
@@ -24,7 +24,7 @@ Demo User → 二选一开始：上传多篇相似作品并自动分析风格后
 - [x] 初始化后端 FastAPI、PromptComposer 和生成策略。
 - [x] 引入 SQLAlchemy/Alembic 数据模型与迁移骨架。
 - [x] 建立 MVP1 核心表：User、Material、MaterialParagraph、StyleAnalysisJob、StyleProfile、Document、DocumentParagraph、WritingTask、ModelUsageLog。
-- [x] 固定 Demo User；MVP1 不做真实个人注册登录。
+- [x] 固定 Demo User 打通首轮闭环；MVP1.1 已切换为真实登录用户，Demo User 只保留为开发/测试辅助。
 - [x] 组织注册接口仅预留，返回 not implemented。
 - [ ] 接入正式 PostgreSQL 实例并执行 Alembic migration。
 - [ ] 接入 OSS 私有文件存储。
@@ -67,7 +67,7 @@ Demo User → 二选一开始：上传多篇相似作品并自动分析风格后
 
 ## 已知决策
 
-- MVP1 不做真实个人注册登录；先用固定 Demo User 打通核心闭环。
+- MVP1.1 已实现真实个人注册登录；Demo User 只保留为开发/测试辅助。
 - MVP1 不做组织正式注册、组织子账号、组织共享余额。
 - MVP1 不做余额、充值、冻结、扣费；只记录 token 与估算成本。
 - PostgreSQL 是正式数据层目标；本地无配置时允许 SQLite fallback 方便开发验证。
@@ -101,6 +101,7 @@ Demo User → 二选一开始：上传多篇相似作品并自动分析风格后
 - [x] 业务接口鉴权验证：未登录访问素材、风格、写作接口返回 401。
 - [x] 数据隔离验证：用户 A 上传的素材，用户 B 不可见，也不能用于发起风格分析。
 - [x] 本地服务冒烟：后端 `/healthz` 正常，前端 HTTP 200，注册后 Cookie 登录态可访问 `/v1/me`。
+- [x] 补充接手文档：`09_milestones_里程碑/handoff_2026-08-06_mvp1_user_auth.md`。
 
 ## 2026-08-05 验证记录
 
