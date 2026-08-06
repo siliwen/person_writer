@@ -1,0 +1,15 @@
+{
+  "name": "personal-writing-agent-saas",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "typecheck:web": "npm --workspace apps/web run typecheck",
+    "lint:web": "npm --workspace apps/web run lint",
+    "test:api": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:PYTHONPATH='D:\\AI_talk\\personal_writing_agent_saas\\apps\\api'; $env:DATABASE_URL='sqlite+pysqlite:///:memory:'; $env:MODEL_GATEWAY_MODE='mock'; & 'D:\\AI_talk\\personal_writing_agent_saas\\.venv\\Scripts\\python.exe' -m pytest apps/api/tests\""
+  },
+  "devDependencies": {}
+}

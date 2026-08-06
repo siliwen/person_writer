@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StyleProfileV1",
+  "type": "object",
+  "required": [
+    "style_profile_id",
+    "writer_id",
+    "version",
+    "language",
+    "genre_scope",
+    "source_material_ids",
+    "summary",
+    "features",
+    "constraints",
+    "provenance"
+  ],
+  "properties": {
+    "style_profile_id": { "type": "string" },
+    "writer_id": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "language": { "type": "string", "enum": ["zh-CN", "zh-TW", "en"] },
+    "genre_scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": ["article", "prose", "poetry", "fiction_chapter", "mixed"]
+      }
+    },
+    "source_material_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["one_sentence", "long_description"],
+      "properties": {
+        "one_sentence": { "type": "string" },
+        "long_description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "required": [
+        "themes",
+        "opening_patterns",
+        "ending_patterns",
+        "sentence_rhythm",
+        "paragraph_structure",
+        "punctuation",
+        "lexical_preferences",
+        "imagery",
+        "rhetorical_devices",
+        "narrative_distance",
+        "emotional_intensity",
+        "structure_patterns"
+      ],
+      "properties": {
+        "themes": { "type": "array", "items": { "type": "string" } },
+        "opening_patterns": { "type": "array", "items": { "type": "string" } },
+        "ending_patterns": { "type": "array", "items": { "type": "string" } },
+        "sentence_rhythm": {
+          "type": "object",
+          "properties": {
+            "average_sentence_length": { "type": "number" },
+            "short_sentence_ratio": { "type": "number" },
+            "long_sentence_ratio": { "type": "number" },
+            "notes": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "paragraph_structure": { "type": "array", "items": { "type": "string" } },
+        "punctuation": { "type": "array", "items": { "type": "string" } },
+        "lexical_preferences": { "type": "array", "items": { "type": "string" } },
+        "imagery": { "type": "array", "items": { "type": "string" } },
+        "rhetorical_devices": { "type": "array", "items": { "type": "string" } },
+        "narrative_distance": { "type": "string" },
+        "emotional_intensity": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "variable"]
+        },
+        "structure_patterns": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": ["must_do", "must_avoid", "copying_guardrails"],
+      "properties": {
+        "must_do": { "type": "array", "items": { "type": "string" } },
+        "must_avoid": { "type": "array", "items": { "type": "string" } },
+        "copying_guardrails": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["created_at", "created_by", "method", "approval_status"],
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "created_by": { "type": "string" },
+        "method": { "type": "string" },
+        "approval_status": {
+          "type": "string",
+          "enum": ["draft", "reviewed", "approved", "deprecated"]
+        },
+        "reviewed_by": { "type": "string" },
+        "reviewed_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

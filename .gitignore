@@ -1,0 +1,26 @@
+.env.local
+*.db
+*.sqlite
+*.sqlite3
+*.pyc
+__pycache__/
+.venv/
+node_modules/
+apps/web/node_modules/
+.next/
+apps/web/.next/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+*.log
+.runtime/
+.runtime_logs/
+apps/web/tsconfig.tsbuildinfo
+
+# Internal evaluation/source materials are not published with the code repo.
+eval_sets/
+测评集/
+
+# Generated crawler artifacts / sample exports.
+tools/web_article_collector/artifacts/

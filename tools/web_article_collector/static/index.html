@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>网页作品采集器</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">文</span>
+        <div>
+          <strong>网页作品采集器</strong>
+          <span>初试测评集</span>
+        </div>
+      </div>
+      <span class="privacy-note">内容仅在本机处理</span>
+    </header>
+
+    <main>
+      <section class="collector" aria-labelledby="collector-title">
+        <div class="section-heading">
+          <p>ARTICLE IMPORT</p>
+          <h1 id="collector-title">采集一篇网页作品</h1>
+        </div>
+
+        <form id="extract-form" class="url-form">
+          <label for="url-input">作品网址</label>
+          <div class="input-row">
+            <div class="url-input-wrap">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M10.5 13.5a4.95 4.95 0 0 0 7 0l2-2a4.95 4.95 0 0 0-7-7l-1.15 1.15M13.5 10.5a4.95 4.95 0 0 0-7 0l-2 2a4.95 4.95 0 0 0 7 7l1.15-1.15" />
+              </svg>
+              <input id="url-input" name="url" type="text" inputmode="url" autocomplete="url" placeholder="https://example.com/article" required />
+            </div>
+            <button id="extract-button" type="submit">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
+              <span>提取正文</span>
+            </button>
+          </div>
+          <p class="field-hint">支持公开的 HTTP/HTTPS 网页。</p>
+        </form>
+
+        <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+      </section>
+
+      <section id="result-section" class="result" hidden aria-labelledby="preview-title">
+        <div class="result-toolbar">
+          <div>
+            <p class="eyebrow">EXTRACTED CONTENT</p>
+            <h2 id="preview-title">正文预览</h2>
+          </div>
+          <button id="download-button" class="download-button" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+            <span>保存 Word</span>
+          </button>
+        </div>
+
+        <div class="article-sheet">
+          <div class="article-meta">
+            <span id="site-name"></span>
+            <span id="char-count"></span>
+          </div>
+          <h3 id="article-title"></h3>
+          <p id="article-byline" class="byline"></p>
+          <div id="article-content" class="article-content"></div>
+          <a id="source-link" class="source-link" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+
+      </section>
+    </main>
+
+    <footer>网页作品采集器 · 本地工具 v1.0</footer>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
