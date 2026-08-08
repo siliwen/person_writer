@@ -22,6 +22,7 @@ SESSION_COOKIE_NAME = "pw_session"
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{6,32}$")
 MAINLAND_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def auth_secret() -> str:
@@ -232,6 +233,101 @@ def bind_phone(db: Session, *, user: models.User, phone_number: str, code: str) 
     user.phone_number = normalized_phone
     user.phone_verified_at = now
     user.updated_at = now
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def validate_email(email: str) -> str:
+    normalized = email.strip().lower()
+    if not EMAIL_RE.fullmatch(normalized):
+        raise HTTPException(status_code=422, detail="请输入有效的邮箱地址。")
+    return normalized
+
+
+def send_email_bind_code(db: Session, *, user: models.User, email: str) -> dict[str, Any]:
+    normalized_email = validate_email(email)
+    existing_email_user = db.scalar(
+        select(models.User).where(models.User.email == normalized_email, models.User.id != user.id)
+    )
+    if existing_email_user:
+        raise HTTPException(status_code=409, detail="这个邮箱已经绑定其他账号。")
+    now = datetime.now(UTC).replace(microsecond=0)
+    recent = db.scalar(
+        select(models.EmailVerificationCode)
+        .where(
+            models.EmailVerificationCode.user_id == user.id,
+            models.EmailVerificationCode.email == normalized_email,
+            models.EmailVerificationCode.purpose == "bind_email",
+            models.EmailVerificationCode.created_at >= now - timedelta(seconds=60),
+            models.EmailVerificationCode.consumed_at.is_(None),
+        )
+        .order_by(models.EmailVerificationCode.created_at.desc())
+    )
+    if recent:
+        raise HTTPException(status_code=429, detail="验证码发送太频繁，请稍后再试。")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    record = models.EmailVerificationCode(
+        id=new_id("email_code"),
+        user_id=user.id,
+        email=normalized_email,
+        purpose="bind_email",
+        code_hash=hash_code(code),
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    db.add(record)
+    db.commit()
+    return {"email": normalized_email, "expires_in_seconds": 600, "debug_code": code}
+
+
+def bind_email(db: Session, *, user: models.User, email: str, code: str) -> models.User:
+    normalized_email = validate_email(email)
+    existing_email_user = db.scalar(
+        select(models.User).where(models.User.email == normalized_email, models.User.id != user.id)
+    )
+    if existing_email_user:
+        raise HTTPException(status_code=409, detail="这个邮箱已经绑定其他账号。")
+    now = datetime.now(UTC).replace(microsecond=0)
+    record = db.scalar(
+        select(models.EmailVerificationCode)
+        .where(
+            models.EmailVerificationCode.user_id == user.id,
+            models.EmailVerificationCode.email == normalized_email,
+            models.EmailVerificationCode.purpose == "bind_email",
+            models.EmailVerificationCode.consumed_at.is_(None),
+            models.EmailVerificationCode.expires_at >= now,
+        )
+        .order_by(models.EmailVerificationCode.created_at.desc())
+    )
+    if not record or not hmac.compare_digest(record.code_hash, hash_code(code.strip())):
+        raise HTTPException(status_code=400, detail="验证码错误或已过期。")
+    record.consumed_at = now
+    user.email = normalized_email
+    user.email_verified_at = now
+    user.updated_at = now
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def change_password(
+    db: Session,
+    *,
+    user: models.User,
+    old_password: str,
+    new_password: str,
+    confirm_password: str,
+) -> models.User:
+    if not verify_password(old_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="原密码不正确。")
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致。")
+    validate_password(new_password)
+    if verify_password(new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同。")
+    user.password_hash = hash_password(new_password)
+    user.updated_at = datetime.now(UTC).replace(microsecond=0)
     db.commit()
     db.refresh(user)
     return user

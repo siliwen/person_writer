@@ -3,8 +3,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -12,10 +14,13 @@ from sqlalchemy.orm import Session
 from app import models
 from app.core.generation_policy import GenerationMode
 from app.core.auth_service import (
+    bind_email,
     bind_phone,
+    change_password,
     clear_session_cookie,
     current_user_from_request,
     register_user,
+    send_email_bind_code,
     send_phone_bind_code,
     set_session_cookie,
 )
@@ -27,10 +32,18 @@ from app.core.mvp_service import (
     create_style_analysis_job,
     create_writing,
     delete_style_profile,
+    generate_docx_bytes,
     get_style_analysis_job,
+    get_user_document,
     list_materials,
+    list_saved_documents,
     list_style_profiles,
-    rewrite_paragraph,
+    preview_rewrite_paragraph,
+    save_document,
+    set_default_style_profile,
+    update_style_profile,
+    unsave_document,
+    update_paragraph_content,
 )
 from app.core.prompt_composer import WritingTaskInput, compose_prompt
 from app.core.task_service import InMemoryWritingTaskService
@@ -52,8 +65,8 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3002", "http://127.0.0.1:3002"],
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):(3000|3002)$",
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3002", "http://127.0.0.1:3002", "http://localhost:3220", "http://127.0.0.1:3220"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):(\d+)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -115,8 +128,17 @@ class ConfirmStyleProfileRequest(BaseModel):
     profile: dict[str, Any] | None = None
 
 
+class UpdateStyleProfileRequest(BaseModel):
+    name: str
+    profile: dict[str, Any] | None = None
+
+
 class RewriteParagraphRequest(BaseModel):
     instruction: str
+
+
+class UpdateParagraphRequest(BaseModel):
+    content: str
 
 
 class RegisterRequest(BaseModel):
@@ -137,6 +159,21 @@ class PhoneCodeRequest(BaseModel):
 class BindPhoneRequest(BaseModel):
     phone_number: str
     code: str
+
+
+class EmailCodeRequest(BaseModel):
+    email: str
+
+
+class BindEmailRequest(BaseModel):
+    email: str
+    code: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str
 
 
 class PasswordResetSendCodeRequest(BaseModel):
@@ -219,6 +256,41 @@ def bind_account_phone(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     updated = bind_phone(db, user=user, phone_number=request.phone_number, code=request.code)
+    return {"user": user_to_dict(updated)}
+
+
+@app.post("/v1/account/email/send-code")
+def send_email_code(
+    request: EmailCodeRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return send_email_bind_code(db, user=user, email=request.email)
+
+
+@app.post("/v1/account/email/bind")
+def bind_account_email(
+    request: BindEmailRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    updated = bind_email(db, user=user, email=request.email, code=request.code)
+    return {"user": user_to_dict(updated)}
+
+
+@app.post("/v1/account/password/change")
+def change_account_password(
+    request: ChangePasswordRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    updated = change_password(
+        db,
+        user=user,
+        old_password=request.old_password,
+        new_password=request.new_password,
+        confirm_password=request.confirm_password,
+    )
     return {"user": user_to_dict(updated)}
 
 
@@ -323,6 +395,33 @@ def delete_style(
     return {"id": style.id, "user_id": style.user_id, "status": style.status}
 
 
+@app.patch("/v1/style-profiles/{style_profile_id}")
+def update_style(
+    request: UpdateStyleProfileRequest,
+    style_profile_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    style = update_style_profile(
+        db,
+        user_id=user.id,
+        style_profile_id=style_profile_id,
+        name=request.name,
+        profile=request.profile,
+    )
+    return style_profile_to_dict(style)
+
+
+@app.post("/v1/style-profiles/{style_profile_id}/set-default")
+def set_default_style(
+    style_profile_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    style = set_default_style_profile(db, user_id=user.id, style_profile_id=style_profile_id)
+    return style_profile_to_dict(style)
+
+
 @app.post("/v1/prompt/compose")
 def compose_prompt_endpoint(request: ComposePromptRequest) -> dict[str, Any]:
     prompt = compose_prompt(
@@ -418,15 +517,88 @@ def rewrite_document_paragraph(
     user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    document = rewrite_paragraph(
+    rewritten_content = preview_rewrite_paragraph(
         db,
         user_id=user.id,
         document_id=document_id,
         paragraph_id=paragraph_id,
         instruction=request.instruction,
     )
-    db.refresh(document, attribute_names=["paragraphs"])
+    return {"rewritten_content": rewritten_content}
+
+
+@app.put("/v1/documents/{document_id}/paragraphs/{paragraph_id}")
+def update_paragraph(
+    document_id: str,
+    paragraph_id: str,
+    request: UpdateParagraphRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = update_paragraph_content(
+        db,
+        user_id=user.id,
+        document_id=document_id,
+        paragraph_id=paragraph_id,
+        content=request.content,
+    )
     return document_to_dict(document)
+
+
+@app.get("/v1/documents/saved")
+def get_saved_documents(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    documents = list_saved_documents(db, user_id=user.id)
+    return {"user_id": user.id, "documents": [document_to_dict(item) for item in documents]}
+
+
+@app.get("/v1/documents/{document_id}")
+def get_document(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = get_user_document(db, user_id=user.id, document_id=document_id)
+    return document_to_dict(document)
+
+
+@app.post("/v1/documents/{document_id}/save")
+def save_document_endpoint(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = save_document(db, user_id=user.id, document_id=document_id)
+    return document_to_dict(document)
+
+
+@app.post("/v1/documents/{document_id}/unsave")
+def unsave_document_endpoint(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = unsave_document(db, user_id=user.id, document_id=document_id)
+    return document_to_dict(document)
+
+
+@app.get("/v1/documents/{document_id}/download/docx")
+def download_document_docx(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    document = get_user_document(db, user_id=user.id, document_id=document_id)
+    data = generate_docx_bytes(document)
+    filename = f"{document.title}.docx".replace(" ", "_").replace("/", "_")
+    encoded_filename = quote(filename, safe="")
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
 
 
 def user_to_dict(user: models.User) -> dict[str, Any]:
@@ -437,6 +609,8 @@ def user_to_dict(user: models.User) -> dict[str, Any]:
         "mode": user.mode,
         "phone_number": user.phone_number,
         "phone_verified": user.phone_verified_at is not None,
+        "email": user.email,
+        "email_verified": user.email_verified_at is not None,
         "created_at": user.created_at.isoformat(),
     }
 
@@ -511,6 +685,8 @@ def document_to_dict(document: models.Document) -> dict[str, Any]:
         "genre": document.genre,
         "style_profile_id": document.style_profile_id,
         "status": document.status,
+        "is_saved": document.is_saved,
+        "saved_at": document.saved_at.isoformat() if document.saved_at else None,
         "content": document.content,
         "paragraphs": [
             {

@@ -8,6 +8,8 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+from docx import Document as DocxDocument
+from docx.shared import Pt, RGBColor
 
 from app import models
 from app.core.generation_policy import GenerationMode
@@ -211,6 +213,59 @@ def get_active_style(db: Session, *, user_id: str, style_profile_id: str) -> mod
     return style
 
 
+def update_style_profile(
+    db: Session,
+    *,
+    user_id: str,
+    style_profile_id: str,
+    name: str,
+    profile: dict[str, Any] | None,
+) -> models.StyleProfile:
+    style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="style name is required")
+    duplicate = db.scalar(
+        select(models.StyleProfile).where(
+            models.StyleProfile.user_id == user_id,
+            models.StyleProfile.status == "active",
+            models.StyleProfile.name == normalized_name,
+            models.StyleProfile.id != style_profile_id,
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="风格名称已存在，请换一个名称。")
+    style.name = normalized_name
+    if profile is not None:
+        style.profile = profile
+        if isinstance(profile, dict):
+            profile["style_name"] = normalized_name
+    style.updated_at = models.utc_now()
+    db.commit()
+    db.refresh(style)
+    return style
+
+
+def set_default_style_profile(
+    db: Session,
+    *,
+    user_id: str,
+    style_profile_id: str,
+) -> models.StyleProfile:
+    style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
+    if style.is_default:
+        return style
+    db.query(models.StyleProfile).filter(
+        models.StyleProfile.user_id == user_id,
+        models.StyleProfile.id != style_profile_id,
+    ).update({models.StyleProfile.is_default: False})
+    style.is_default = True
+    style.updated_at = models.utc_now()
+    db.commit()
+    db.refresh(style)
+    return style
+
+
 @dataclass(frozen=True)
 class CreatedWriting:
     task: models.WritingTask
@@ -290,14 +345,15 @@ def create_writing(
     return CreatedWriting(task=writing_task, document=document, model_result=model_result)
 
 
-def rewrite_paragraph(
+def preview_rewrite_paragraph(
     db: Session,
     *,
     user_id: str,
     document_id: str,
     paragraph_id: str,
     instruction: str,
-) -> models.Document:
+) -> str:
+    """Call AI to rewrite a paragraph and return the result WITHOUT saving to DB."""
     document = db.scalar(
         select(models.Document)
         .where(models.Document.id == document_id, models.Document.user_id == user_id)
@@ -309,7 +365,7 @@ def rewrite_paragraph(
     if not paragraph:
         raise HTTPException(status_code=404, detail="paragraph not found")
     style = get_active_style(db, user_id=user_id, style_profile_id=document.style_profile_id)
-    fallback = f"{paragraph.content}\n（已按意见调整：{instruction.strip()}；保持“{style.name}”的语气和自然段长度。）"
+    fallback = f"{paragraph.content}\n（已按意见调整：{instruction.strip()}；保持\u201c{style.name}\u201d的语气和自然段长度。）"
     model_result = ModelGateway().generate(
         messages=[
             {"role": "system", "content": "你只重写用户指定的一个自然段，其他段落不得改变。"},
@@ -321,12 +377,6 @@ def rewrite_paragraph(
         purpose="paragraph_rewrite",
         fallback=fallback,
     )
-    paragraph.content = model_result.content.strip()
-    paragraph.rewrite_count += 1
-    paragraph.updated_at = models.utc_now()
-    ordered = sorted(document.paragraphs, key=lambda item: item.position)
-    document.content = "\n\n".join(item.content for item in ordered)
-    document.updated_at = models.utc_now()
     db.add(
         models.ModelUsageLog(
             id=new_id("usage"),
@@ -339,8 +389,110 @@ def rewrite_paragraph(
         )
     )
     db.commit()
+    return model_result.content.strip()
+
+
+def update_paragraph_content(
+    db: Session,
+    *,
+    user_id: str,
+    document_id: str,
+    paragraph_id: str,
+    content: str,
+) -> models.Document:
+    """Directly update a paragraph's content (manual edit or confirmed AI rewrite)."""
+    document = db.scalar(
+        select(models.Document)
+        .where(models.Document.id == document_id, models.Document.user_id == user_id)
+        .options(selectinload(models.Document.paragraphs))
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="document not found")
+    paragraph = next((item for item in document.paragraphs if item.id == paragraph_id), None)
+    if not paragraph:
+        raise HTTPException(status_code=404, detail="paragraph not found")
+    paragraph.content = content.strip()
+    paragraph.rewrite_count += 1
+    paragraph.updated_at = models.utc_now()
+    ordered = sorted(document.paragraphs, key=lambda item: item.position)
+    document.content = "\n\n".join(item.content for item in ordered)
+    document.updated_at = models.utc_now()
+    db.commit()
     db.refresh(document)
     return document
+
+
+def save_document(db: Session, *, user_id: str, document_id: str) -> models.Document:
+    document = db.scalar(
+        select(models.Document)
+        .where(models.Document.id == document_id, models.Document.user_id == user_id)
+        .options(selectinload(models.Document.paragraphs))
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="document not found")
+    document.is_saved = True
+    document.saved_at = models.utc_now()
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def unsave_document(db: Session, *, user_id: str, document_id: str) -> models.Document:
+    document = db.scalar(
+        select(models.Document)
+        .where(models.Document.id == document_id, models.Document.user_id == user_id)
+        .options(selectinload(models.Document.paragraphs))
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="document not found")
+    document.is_saved = False
+    document.saved_at = None
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def get_user_document(db: Session, *, user_id: str, document_id: str) -> models.Document:
+    document = db.scalar(
+        select(models.Document)
+        .where(models.Document.id == document_id, models.Document.user_id == user_id)
+        .options(selectinload(models.Document.paragraphs))
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="document not found")
+    return document
+
+
+def list_saved_documents(db: Session, *, user_id: str) -> list[models.Document]:
+    return list(
+        db.scalars(
+            select(models.Document)
+            .where(models.Document.user_id == user_id, models.Document.is_saved.is_(True))
+            .order_by(models.Document.saved_at.desc())
+        )
+    )
+
+
+def generate_docx_bytes(document: models.Document) -> bytes:
+    docx = DocxDocument()
+    title = docx.add_heading(document.title, level=1)
+    title.alignment = 1  # center
+    meta = docx.add_paragraph()
+    meta.alignment = 1
+    run = meta.add_run(f"{document.genre} · 约 {len(document.content)} 字 · {document.updated_at.strftime('%Y-%m-%d %H:%M')}")
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+    docx.add_paragraph()
+    for paragraph in sorted(document.paragraphs, key=lambda item: item.position):
+        p = docx.add_paragraph(paragraph.content)
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_after = Pt(8)
+    import io
+
+    buffer = io.BytesIO()
+    docx.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def _fallback_article(*, style_name: str, task: WritingTaskInput) -> str:

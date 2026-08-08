@@ -50,6 +50,7 @@ def init_db(*, drop_existing: bool = False) -> None:
     Base.metadata.create_all(bind=engine)
     if engine.url.get_backend_name() == "sqlite":
         _ensure_sqlite_auth_columns()
+        _ensure_sqlite_document_library_columns()
 
 
 def _ensure_sqlite_auth_columns() -> None:
@@ -63,9 +64,26 @@ def _ensure_sqlite_auth_columns() -> None:
         "password_hash": "VARCHAR(255)",
         "phone_number": "VARCHAR(11)",
         "phone_verified_at": "DATETIME",
+        "email": "VARCHAR(255)",
+        "email_verified_at": "DATETIME",
         "updated_at": "DATETIME",
     }
     with engine.begin() as connection:
         for name, definition in required_columns.items():
             if name not in existing_columns:
                 connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {definition}"))
+
+
+def _ensure_sqlite_document_library_columns() -> None:
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+    existing_columns = {column["name"] for column in inspector.get_columns("documents")}
+    required_columns = {
+        "is_saved": "BOOLEAN DEFAULT 0",
+        "saved_at": "DATETIME",
+    }
+    with engine.begin() as connection:
+        for name, definition in required_columns.items():
+            if name not in existing_columns:
+                connection.execute(text(f"ALTER TABLE documents ADD COLUMN {name} {definition}"))

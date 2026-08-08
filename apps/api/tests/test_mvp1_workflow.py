@@ -132,11 +132,28 @@ def test_demo_user_can_upload_analyze_confirm_write_and_rewrite_one_paragraph() 
         json={"instruction": "更克制一点，减少解释"},
     )
     assert rewrite_response.status_code == 200
-    rewritten = rewrite_response.json()["paragraphs"]
-    assert rewritten[0]["content"] == original_paragraphs[0]["content"]
-    assert rewritten[2]["content"] == original_paragraphs[2]["content"]
-    assert rewritten[1]["content"] != original_paragraphs[1]["content"]
-    assert rewritten[1]["rewrite_count"] == 1
+    rewritten_content = rewrite_response.json()["rewritten_content"]
+    assert rewritten_content
+    assert rewritten_content != target["content"]
+
+    # Verify the original document is NOT modified (preview mode)
+    doc_response = client.get(f"/v1/documents/{document['id']}")
+    assert doc_response.status_code == 200
+    doc_after = doc_response.json()
+    assert doc_after["paragraphs"][1]["content"] == target["content"]
+    assert doc_after["paragraphs"][1]["rewrite_count"] == 0
+
+    # Now overwrite the paragraph with the rewritten content
+    overwrite_response = client.put(
+        f"/v1/documents/{document['id']}/paragraphs/{target['id']}",
+        json={"content": rewritten_content},
+    )
+    assert overwrite_response.status_code == 200
+    overwritten = overwrite_response.json()["paragraphs"]
+    assert overwritten[0]["content"] == original_paragraphs[0]["content"]
+    assert overwritten[2]["content"] == original_paragraphs[2]["content"]
+    assert overwritten[1]["content"] == rewritten_content
+    assert overwritten[1]["rewrite_count"] == 1
 
 
 def test_style_analysis_uses_model_to_create_actionable_v2_profile(monkeypatch) -> None:
@@ -574,5 +591,208 @@ def test_writing_task_sends_style_intensity_to_model_prompt(monkeypatch) -> None
     assert response.status_code == 200
     assert "风格贴近程度：高度贴近" in captured_user_prompt
     assert "避免让结果像替换内容后的改写稿" in captured_user_prompt
+
+
+def test_preview_rewrite_does_not_modify_original_document(monkeypatch) -> None:
+    _force_gateway_fallback(monkeypatch)
+    client = TestClient(app)
+    material_id = _upload_material(client, "preview-rewrite.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    job = client.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
+    style = client.post(
+        "/v1/style-profiles/confirm",
+        json={"job_id": job["id"], "name": "预览重写风格", "profile": job["draft_profile"]},
+    ).json()
+
+    writing = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": style["id"],
+            "requested_mode": "style_prompt_only",
+            "task": {
+                "genre": "散文",
+                "title": "预览测试",
+                "brief": "写一篇短文",
+                "target_length": "600字",
+            },
+        },
+    ).json()
+    document = writing["document"]
+    target = document["paragraphs"][0]
+    original_content = target["content"]
+
+    rewrite_response = client.post(
+        f"/v1/documents/{document['id']}/paragraphs/{target['id']}/rewrite",
+        json={"instruction": "更简短"},
+    )
+    assert rewrite_response.status_code == 200
+    assert "rewritten_content" in rewrite_response.json()
+    rewritten = rewrite_response.json()["rewritten_content"]
+    assert rewritten != original_content
+
+    # Verify original document unchanged
+    doc_after = client.get(f"/v1/documents/{document['id']}").json()
+    assert doc_after["paragraphs"][0]["content"] == original_content
+    assert doc_after["paragraphs"][0]["rewrite_count"] == 0
+
+
+def test_update_paragraph_overwrites_content_directly(monkeypatch) -> None:
+    _force_gateway_fallback(monkeypatch)
+    client = TestClient(app)
+    material_id = _upload_material(client, "overwrite.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    job = client.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
+    style = client.post(
+        "/v1/style-profiles/confirm",
+        json={"job_id": job["id"], "name": "覆盖测试风格", "profile": job["draft_profile"]},
+    ).json()
+
+    writing = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": style["id"],
+            "requested_mode": "style_prompt_only",
+            "task": {
+                "genre": "散文",
+                "title": "覆盖测试",
+                "brief": "写一篇短文",
+                "target_length": "600字",
+            },
+        },
+    ).json()
+    document = writing["document"]
+    target = document["paragraphs"][0]
+    original_content = target["content"]
+    manual_edit = "这是我手动修改的段落内容，不经过AI。"
+
+    overwrite_response = client.put(
+        f"/v1/documents/{document['id']}/paragraphs/{target['id']}",
+        json={"content": manual_edit},
+    )
+    assert overwrite_response.status_code == 200
+    updated = overwrite_response.json()
+    assert updated["paragraphs"][0]["content"] == manual_edit
+    assert updated["paragraphs"][0]["content"] != original_content
+    assert updated["paragraphs"][0]["rewrite_count"] == 1
+    # Other paragraphs unchanged
+    assert updated["paragraphs"][1]["content"] == document["paragraphs"][1]["content"]
+    # Document content field is updated too
+    assert manual_edit in updated["content"]
+
+
+def test_update_paragraph_rejects_empty_content(monkeypatch) -> None:
+    _force_gateway_fallback(monkeypatch)
+    client = TestClient(app)
+    material_id = _upload_material(client, "empty-test.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    job = client.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
+    style = client.post(
+        "/v1/style-profiles/confirm",
+        json={"job_id": job["id"], "name": "空内容测试风格", "profile": job["draft_profile"]},
+    ).json()
+
+    writing = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": style["id"],
+            "requested_mode": "style_prompt_only",
+            "task": {"genre": "散文", "title": "空内容", "brief": "写一篇短文", "target_length": "600字"},
+        },
+    ).json()
+    document = writing["document"]
+    target = document["paragraphs"][0]
+
+    response = client.put(
+        f"/v1/documents/{document['id']}/paragraphs/{target['id']}",
+        json={"content": "   "},
+    )
+    assert response.status_code == 200
+    # Whitespace-only content should be stripped to empty
+    assert response.json()["paragraphs"][0]["content"] == ""
+
+
+def _confirm_style(client: TestClient, name: str, profile: dict | None = None) -> dict:
+    first_id = _upload_material(client, "a.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    second_id = _upload_material(client, "b.txt", "雨落在铁皮棚上。\n\n母亲把灯拧暗。")
+    job_response = client.post("/v1/style-analysis-jobs", json={"material_ids": [first_id, second_id]})
+    assert job_response.status_code == 200
+    job = job_response.json()
+    confirm_response = client.post(
+        "/v1/style-profiles/confirm",
+        json={"job_id": job["id"], "name": name, "profile": profile or job["draft_profile"]},
+    )
+    assert confirm_response.status_code == 200
+    return confirm_response.json()
+
+
+def test_updating_style_profile_changes_name_and_profile() -> None:
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    style = _confirm_style(client, "旧巷散文")
+
+    response = client.patch(
+        f"/v1/style-profiles/{style['id']}",
+        json={"name": "改后的风格", "profile": {"tone": "冷峻"}},
+    )
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["name"] == "改后的风格"
+    assert updated["profile"]["tone"] == "冷峻"
+    assert updated["profile"]["style_name"] == "改后的风格"
+
+    # Profile-only update (name unchanged) is allowed
+    profile_only = client.patch(
+        f"/v1/style-profiles/{style['id']}",
+        json={"name": "改后的风格", "profile": {"tone": "温柔"}},
+    )
+    assert profile_only.status_code == 200
+    assert profile_only.json()["name"] == "改后的风格"
+    assert profile_only.json()["profile"]["tone"] == "温柔"
+
+
+def test_updating_style_profile_rejects_duplicate_name() -> None:
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    _confirm_style(client, "风格A")
+    style_b = _confirm_style(client, "风格B")
+
+    response = client.patch(
+        f"/v1/style-profiles/{style_b['id']}",
+        json={"name": "风格A", "profile": None},
+    )
+    assert response.status_code == 409
+    assert "风格名称已存在" in response.json()["detail"]
+
+
+def test_updating_style_profile_requires_non_empty_name() -> None:
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    style = _confirm_style(client, "旧巷散文")
+
+    response = client.patch(
+        f"/v1/style-profiles/{style['id']}",
+        json={"name": "   ", "profile": None},
+    )
+    assert response.status_code == 400
+
+
+def test_setting_default_style_marks_only_one_active_style() -> None:
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    first = _confirm_style(client, "风格A")
+    second = _confirm_style(client, "风格B")
+
+    set_response = client.post(f"/v1/style-profiles/{second['id']}/set-default")
+    assert set_response.status_code == 200
+    assert set_response.json()["is_default"] is True
+
+    styles_response = client.get("/v1/style-profiles")
+    styles = styles_response.json()["styles"]
+    defaults = [s for s in styles if s["is_default"]]
+    assert len(defaults) == 1
+    assert defaults[0]["id"] == second["id"]
+    assert first["id"] != second["id"]
+
+    # Setting default on the same style again is idempotent
+    repeat = client.post(f"/v1/style-profiles/{second['id']}/set-default")
+    assert repeat.status_code == 200
+    assert repeat.json()["is_default"] is True
 
 

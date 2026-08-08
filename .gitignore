@@ -24,3 +24,25 @@ eval_sets/
 
 # Generated crawler artifacts / sample exports.
 tools/web_article_collector/artifacts/
+
+# Local tooling data / session memory (keep local, not published to remote).
+.workbuddy/
+.playwright-cli/
+
+# Smoke-test / debugging artifacts.
+*.png
+smoke_*.txt
+smoke_edit.py
+after-reload.yml
+test-articles.yml
+test1.yml
+manual-edit.yaml
+reg-form.yml
+*_response.json
+saved_docs.json
+download_test.json
+task_response.json
+styles_response.json
+login_response.json
+register_response.json
+test_download*.docx

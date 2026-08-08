@@ -1,236 +1,202 @@
 ﻿"use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  BusyAction,
+  CurrentUser,
+  Material,
+  ModelStatus,
+  StyleJob,
+  StyleProfile,
+  ViewName,
+  WritingDocument,
+} from "@/lib/types";
+import { apiBase, parseJson } from "@/lib/api";
+import { summarizeStyleDraft } from "@/lib/styleDraft";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { Sidebar } from "./Sidebar";
+import { DashboardView } from "./DashboardView";
+import { StylesView } from "./StylesView";
+import { NewStyleModal } from "./NewStyleModal";
+import { EditStyleModal } from "./EditStyleModal";
+import { WritingView, type WritingParams } from "./WritingView";
+import { DocumentReader } from "./DocumentReader";
+import { ArticlesView } from "./ArticlesView";
+import { SettingsView } from "./SettingsView";
 
-type Material = {
-  id: string;
-  title: string;
-  genre: string;
-  source_filename: string | null;
-  char_count: number;
-  paragraph_count: number;
+const viewTitles: Record<ViewName, { title: string; subtitle: string }> = {
+  dashboard: { title: "工作台", subtitle: "" },
+  styles: { title: "选择风格", subtitle: "选择一个风格开始写作，或创建新的风格档案" },
+  writing: { title: "写作", subtitle: "按你的风格生成和修改文章" },
+  reading: { title: "文章详情", subtitle: "查看和修改已保存的文章" },
+  articles: { title: "文章库", subtitle: "查看和管理你保存的文章" },
+  settings: { title: "设置", subtitle: "管理账号、安全和使用量" },
 };
-
-type StyleJob = {
-  id: string;
-  status: string;
-  material_ids: string[];
-  draft_profile: Record<string, unknown>;
-};
-
-type StyleProfile = {
-  id: string;
-  name: string;
-  status: string;
-  profile: Record<string, unknown>;
-};
-
-type CurrentUser = {
-  user_id: string;
-  username: string;
-  display_name: string;
-  mode: string;
-  phone_number: string | null;
-  phone_verified: boolean;
-};
-
-type StyleDraftView = {
-  plainSummary: string;
-  dimensions: Array<{
-    key: string;
-    title: string;
-    whatWeFound: string[];
-    whyItMatters: string;
-    editableSummary: string;
-  }>;
-  mustDo: string[];
-  mustAvoid: string[];
-  evidence: string[];
-};
-
-type DocumentParagraph = {
-  id: string;
-  position: number;
-  content: string;
-  rewrite_count: number;
-};
-
-
-type ModelStatus = {
-  mode: string;
-  has_api_key: boolean;
-  base_url: string;
-  model_name: string;
-  fallback_behavior: string;
-};
-type WritingDocument = {
-  id: string;
-  title: string;
-  genre: string;
-  content: string;
-  paragraphs: DocumentParagraph[];
-  updated_at: string;
-};
-
-type BusyAction = "upload" | "analysis" | "confirm" | "delete_style" | "writing" | "rewrite" | null;
-type StartMode = "create_style" | "use_existing";
-
-const GENRES = ["散文", "故事", "小说", "剧本", "诗歌", "杂文", "随笔"];
-
-function apiBase() {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
-  }
-  return "http://127.0.0.1:8000";
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body.detail ?? body.message ?? `HTTP ${response.status}`);
-  }
-  return body as T;
-}
 
 export function WritingWorkspace() {
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [authUsername, setAuthUsername] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [phoneDebugCode, setPhoneDebugCode] = useState("");
-  const [accountError, setAccountError] = useState("");
-  const [accountStatus, setAccountStatus] = useState("");
+  return (
+    <AuthProvider>
+      <WorkspaceInner />
+    </AuthProvider>
+  );
+}
+
+function WorkspaceInner() {
+  const { currentUser, setCurrentUser, requireAuth, openAuth, logout: authLogout } = useAuth();
+
+  const [currentView, setCurrentView] = useState<ViewName>("styles");
+  const [newStyleModalOpen, setNewStyleModalOpen] = useState(false);
+
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [startMode, setStartMode] = useState<StartMode>("create_style");
-  const [startModeTouched, setStartModeTouched] = useState(false);
-  const [files, setFiles] = useState<FileList | null>(null);
-  const [uploadGenre, setUploadGenre] = useState("散文");
+  const [styles, setStyles] = useState<StyleProfile[]>([]);
+  const [selectedStyleId, setSelectedStyleId] = useState("");
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [document, setDocument] = useState<WritingDocument | null>(null);
+  const [generationCount, setGenerationCount] = useState(0);
+  const [savedDocuments, setSavedDocuments] = useState<WritingDocument[]>([]);
+  const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+
   const [styleJob, setStyleJob] = useState<StyleJob | null>(null);
   const [styleName, setStyleName] = useState("我的散文风格");
   const [profileJson, setProfileJson] = useState("");
-  const [styles, setStyles] = useState<StyleProfile[]>([]);
-  const [selectedStyleId, setSelectedStyleId] = useState("");
-  const [writingGenre, setWritingGenre] = useState("散文");
-  const [title, setTitle] = useState("附近生活");
-  const [brief, setBrief] = useState("写一篇关于街角小店和旧物的文章。");
-  const [targetLength, setTargetLength] = useState("1200字");
-  const [styleIntensity, setStyleIntensity] = useState("balanced");
-  const [mustInclude, setMustInclude] = useState("具体场景、自然段、克制表达");
-  const [mustAvoid, setMustAvoid] = useState("AI 套话、空泛抒情、宏大口号");
-  const [document, setDocument] = useState<WritingDocument | null>(null);
-  const [generationCount, setGenerationCount] = useState(0);
-  const [rewriteDialogParagraphId, setRewriteDialogParagraphId] = useState("");
-  const [rewriteInstruction, setRewriteInstruction] = useState("");
-  const [deleteStyleError, setDeleteStyleError] = useState("");
-  const [status, setStatus] = useState("未登录也可以预览工作台；上传作品、保存风格和生成文章需要先注册或登录。");
+  const [confirmedStyleId, setConfirmedStyleId] = useState("");
+  const [uploadGenre, setUploadGenre] = useState("散文");
+
+  const [status, setStatus] = useState("选择一个风格开始写作，或点击右上角「新建风格」创建新的风格档案。");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [uploadError, setUploadError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [confirmError, setConfirmError] = useState("");
   const [writingError, setWritingError] = useState("");
-  const [rewriteError, setRewriteError] = useState("");
-  const [confirmedStyleId, setConfirmedStyleId] = useState("");
-  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
-  const writingRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleteStyleError, setDeleteStyleError] = useState("");
+
+  // Edit style modal state
+  const [editingStyle, setEditingStyle] = useState<StyleProfile | null>(null);
+  const [editStyleName, setEditStyleName] = useState("");
+  const [editProfileJson, setEditProfileJson] = useState("");
+  const [editStyleError, setEditStyleError] = useState("");
+
   const busy = busyAction !== null;
 
-  const selectedStyle = useMemo(
-    () => styles.find((item) => item.id === selectedStyleId),
-    [styles, selectedStyleId]
+  const styleDraftView = useMemo(
+    () => summarizeStyleDraft(styleJob?.draft_profile),
+    [styleJob]
   );
-  const styleDraftView = useMemo(() => summarizeStyleDraft(styleJob?.draft_profile), [styleJob]);
-  const documentUpdatedAt = useMemo(() => {
-    if (!document?.updated_at) {
-      return "";
-    }
-    return new Date(document.updated_at).toLocaleString("zh-CN", { hour12: false });
-  }, [document?.updated_at]);
-  const rewriteDialogParagraph = useMemo(
-    () => document?.paragraphs.find((item) => item.id === rewriteDialogParagraphId) ?? null,
-    [document, rewriteDialogParagraphId]
-  );
+
+  // Track previous user ID to detect login/logout transitions
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     void refreshAll();
   }, []);
 
-  async function refreshAll() {
-    const user = await loadCurrentUser();
-    await loadModelStatus();
-    if (user) {
-      await Promise.all([loadMaterials(), loadStyles()]);
-    } else {
+  // React to auth state changes (login / logout)
+  useEffect(() => {
+    const userId = currentUser?.user_id ?? null;
+    if (prevUserIdRef.current === userId) return;
+    const prevId = prevUserIdRef.current;
+    prevUserIdRef.current = userId;
+
+    if (userId && !prevId) {
+      // User logged in (or initial session found) — load user data
+      setStatus(`已登录：${currentUser!.username}。可以继续使用工作台。`);
+      void Promise.all([loadMaterials(), loadStyles(), loadSavedDocuments()]);
+    } else if (!userId && prevId) {
+      // User logged out — clear all user data
       setMaterials([]);
       setStyles([]);
+      setSavedDocuments([]);
       setSelectedStyleId("");
-      setStartMode("create_style");
+      setDocument(null);
+      setGenerationCount(0);
+      setCurrentView("styles");
+      setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
     }
+  }, [currentUser]);
+
+  async function refreshAll() {
+    // Check if user has an existing session
+    try {
+      const response = await fetch(`${apiBase()}/v1/me`, { credentials: "include" });
+      if (response.status !== 401) {
+        const user = await parseJson<CurrentUser>(response);
+        setCurrentUser(user);
+      }
+    } catch {
+      // Not logged in
+    }
+    await loadModelStatus();
   }
 
-  async function loadCurrentUser(): Promise<CurrentUser | null> {
-    const response = await fetch(`${apiBase()}/v1/me`, { credentials: "include" });
-    if (response.status === 401) {
-      setCurrentUser(null);
-      return null;
+  async function loadSavedDocuments() {
+    try {
+      const response = await fetch(`${apiBase()}/v1/documents/saved`, { credentials: "include" });
+      const body = await parseJson<{ documents: WritingDocument[] }>(response);
+      setSavedDocuments(body.documents);
+    } catch {
+      setSavedDocuments([]);
     }
-    const user = await parseJson<CurrentUser>(response);
-    setCurrentUser(user);
-    setPhoneNumber(user.phone_number ?? "");
-    return user;
   }
 
   async function loadMaterials() {
-    const response = await fetch(`${apiBase()}/v1/materials`, { credentials: "include" });
-    const body = await parseJson<{ materials: Material[] }>(response);
-    setMaterials(body.materials);
+    try {
+      const response = await fetch(`${apiBase()}/v1/materials`, { credentials: "include" });
+      const body = await parseJson<{ materials: Material[] }>(response);
+      setMaterials(body.materials);
+    } catch {
+      setMaterials([]);
+    }
   }
-
 
   async function loadModelStatus() {
-    const response = await fetch(`${apiBase()}/v1/model-status`, { credentials: "include" });
-    const body = await parseJson<ModelStatus>(response);
-    setModelStatus(body);
-  }
-  async function loadStyles() {
-    const response = await fetch(`${apiBase()}/v1/style-profiles`, { credentials: "include" });
-    const body = await parseJson<{ styles: StyleProfile[] }>(response);
-    setStyles(body.styles);
-    setSelectedStyleId((current) => current || body.styles[0]?.id || "");
-    setStartMode((current) => {
-      if (startModeTouched) {
-        return current;
-      }
-      return body.styles.length > 0 ? "use_existing" : "create_style";
-    });
+    try {
+      const response = await fetch(`${apiBase()}/v1/model-status`, { credentials: "include" });
+      const body = await parseJson<ModelStatus>(response);
+      setModelStatus(body);
+    } catch {
+      setModelStatus(null);
+    }
   }
 
-  async function uploadMaterials() {
-    if (!requireAuth()) {
-      return;
+  async function loadStyles() {
+    try {
+      const response = await fetch(`${apiBase()}/v1/style-profiles`, { credentials: "include" });
+      const body = await parseJson<{ styles: StyleProfile[] }>(response);
+      setStyles(body.styles);
+      setSelectedStyleId((current) => current || body.styles[0]?.id || "");
+    } catch {
+      setStyles([]);
     }
+  }
+
+  function handleOpenNewStyle() {
+    setStyleJob(null);
+    setConfirmedStyleId("");
+    setStyleName("我的散文风格");
+    setProfileJson("");
     setUploadError("");
     setAnalysisError("");
     setConfirmError("");
-    if (!files || files.length === 0) {
+    setNewStyleModalOpen(true);
+  }
+
+  function handleCloseNewStyle() {
+    setNewStyleModalOpen(false);
+  }
+
+  function handleStartWriting(styleId: string) {
+    setSelectedStyleId(styleId);
+    setCurrentView("writing");
+    setStatus("已选择风格，可以开始写作。");
+  }
+
+  async function handleUpload(files: FileList) {
+    setUploadError("");
+    setAnalysisError("");
+    setConfirmError("");
+    if (files.length === 0) {
       setUploadError("请选择要上传的 .txt/.md/.docx 文件。");
-      setStatus("请选择要上传的 .txt/.md/.docx 文件。");
       return;
-    }
-    if (styleJob && !confirmedStyleId) {
-      const shouldOverwrite = window.confirm("当前还有未保存的风格草案。上传新作品会重新分析并覆盖当前草案，是否继续？");
-      if (!shouldOverwrite) {
-        return;
-      }
     }
     let currentPhase: "upload" | "analysis" = "upload";
     setBusyAction("upload");
@@ -242,14 +208,10 @@ export function WritingWorkspace() {
       const response = await fetch(`${apiBase()}/v1/materials/upload`, {
         method: "POST",
         credentials: "include",
-        body: form
+        body: form,
       });
       const body = await parseJson<{ materials: Material[] }>(response);
       await loadMaterials();
-      setFiles(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
       setStatus(`已上传 ${body.materials.length} 篇作品，正在分析风格……`);
       currentPhase = "analysis";
       setBusyAction("analysis");
@@ -257,7 +219,7 @@ export function WritingWorkspace() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ material_ids: body.materials.map((item) => item.id) })
+        body: JSON.stringify({ material_ids: body.materials.map((item) => item.id) }),
       });
       const job = await parseJson<StyleJob>(analysisResponse);
       setStyleJob(job);
@@ -278,33 +240,26 @@ export function WritingWorkspace() {
     }
   }
 
-  async function confirmStyle() {
-    if (!requireAuth()) {
-      return;
-    }
+  async function handleConfirmStyle() {
     setConfirmError("");
     if (!styleJob) {
       setConfirmError("还没有待确认的风格分析草案。");
-      setStatus("还没有待确认的风格分析草案。");
       return;
     }
     const normalizedStyleName = styleName.trim();
     if (!normalizedStyleName) {
       setConfirmError("请填写风格名称。");
-      setStatus("请填写风格名称。");
       return;
     }
     if (styles.some((style) => style.name.trim() === normalizedStyleName && style.id !== confirmedStyleId)) {
       setConfirmError("这个风格名称已经存在，请换一个名称。");
-      setStatus("这个风格名称已经存在，请换一个名称。");
       return;
     }
     let profile: Record<string, unknown>;
     try {
       profile = JSON.parse(profileJson) as Record<string, unknown>;
     } catch {
-      setConfirmError("风格 JSON 格式错误，请修正后再确认。");
-      setStatus("风格 JSON 格式错误，请修正后再确认。");
+      setConfirmError("风格数据格式错误，请修正后再确认。");
       return;
     }
     setBusyAction("confirm");
@@ -314,15 +269,13 @@ export function WritingWorkspace() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: styleJob.id, name: normalizedStyleName, profile })
+        body: JSON.stringify({ job_id: styleJob.id, name: normalizedStyleName, profile }),
       });
       const style = await parseJson<StyleProfile>(response);
       await loadStyles();
       setSelectedStyleId(style.id);
       setConfirmedStyleId(style.id);
-      setStartMode("use_existing");
-      setStartModeTouched(true);
-      setStatus(`风格“${style.name}”已保存，可以用于写作。`);
+      setStatus(`风格"${style.name}"已保存，可以用于写作。`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const friendlyMessage = message.includes("风格名称已存在") ? "这个风格名称已经存在，请换一个名称。" : message;
@@ -333,29 +286,134 @@ export function WritingWorkspace() {
     }
   }
 
-  async function createWritingTask() {
-    if (!requireAuth()) {
+  async function handleDeleteStyle(styleId: string) {
+    setDeleteStyleError("");
+    const styleToDelete = styles.find((s) => s.id === styleId);
+    if (!styleToDelete) return;
+    const shouldDelete = window.confirm(`确认删除风格"${styleToDelete.name}"吗？删除后它不会再出现在风格列表里，已生成文章不受影响。`);
+    if (!shouldDelete) return;
+    setBusyAction("delete_style");
+    setStatus(`正在删除风格"${styleToDelete.name}"……`);
+    try {
+      const response = await fetch(`${apiBase()}/v1/style-profiles/${styleToDelete.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      await parseJson<{ id: string; status: string }>(response);
+      const nextStyles = styles.filter((s) => s.id !== styleToDelete.id);
+      setStyles(nextStyles);
+      if (selectedStyleId === styleToDelete.id) {
+        setSelectedStyleId(nextStyles[0]?.id ?? "");
+      }
+      if (confirmedStyleId === styleToDelete.id) {
+        setConfirmedStyleId("");
+      }
+      if (nextStyles.length === 0) {
+        setDocument(null);
+        setGenerationCount(0);
+      }
+      setStatus(`风格"${styleToDelete.name}"已删除。`);
+      await loadStyles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDeleteStyleError(message);
+      setStatus(`删除风格失败：${message}`);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function handleOpenEditStyle(styleId: string) {
+    const style = styles.find((s) => s.id === styleId);
+    if (!style) return;
+    setEditingStyle(style);
+    setEditStyleName(style.name);
+    setEditProfileJson(JSON.stringify(style.profile, null, 2));
+    setEditStyleError("");
+  }
+
+  function handleCloseEditStyle() {
+    setEditingStyle(null);
+    setEditStyleName("");
+    setEditProfileJson("");
+    setEditStyleError("");
+  }
+
+  async function handleSaveEditStyle() {
+    if (!editingStyle) return;
+    if (!editStyleName.trim()) {
+      setEditStyleError("请填写风格名称。");
       return;
     }
+    let parsedProfile: Record<string, unknown> | undefined;
+    if (editProfileJson.trim()) {
+      try {
+        parsedProfile = JSON.parse(editProfileJson) as Record<string, unknown>;
+      } catch {
+        setEditStyleError("风格档案 JSON 格式不正确，请检查后重试。");
+        return;
+      }
+    }
+    setBusyAction("edit_style");
+    setEditStyleError("");
+    setStatus(`正在保存风格"${editStyleName}"的修改……`);
+    try {
+      const response = await fetch(`${apiBase()}/v1/style-profiles/${editingStyle.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editStyleName.trim(),
+          profile: parsedProfile,
+        }),
+      });
+      await parseJson<{ id: string }>(response);
+      setStatus(`风格"${editStyleName}"已更新。`);
+      handleCloseEditStyle();
+      await loadStyles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const friendlyMessage = message.includes("风格名称已存在") ? "这个风格名称已经存在，请换一个名称。" : message;
+      setEditStyleError(friendlyMessage);
+      setStatus(`更新风格失败：${friendlyMessage}`);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleSetDefaultStyle(styleId: string) {
+    const style = styles.find((s) => s.id === styleId);
+    if (!style) return;
+    setBusyAction("set_default");
+    setStatus(`正在将"${style.name}"设为默认风格……`);
+    try {
+      const response = await fetch(`${apiBase()}/v1/style-profiles/${styleId}/set-default`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await parseJson<{ id: string }>(response);
+      setStatus(`已将"${style.name}"设为默认风格。`);
+      await loadStyles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`设置默认风格失败：${message}`);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleGenerate(params: WritingParams) {
     setWritingError("");
-    if (!selectedStyleId) {
-      setWritingError("请先从风格库选择一个 active 风格。");
-      setStatus("请先从风格库选择一个 active 风格。");
-      return;
-    }
-    if (!title.trim()) {
+    if (!params.title) {
       setWritingError("请填写标题或主题。");
-      setStatus("请填写标题或主题。");
       return;
     }
-    if (!brief.trim()) {
+    if (!params.brief) {
       setWritingError("请填写写作要求。");
-      setStatus("请填写写作要求。");
       return;
     }
-    if (!targetLength.trim()) {
+    if (!params.targetLength) {
       setWritingError("请填写目标字数或篇幅。");
-      setStatus("请填写目标字数或篇幅。");
       return;
     }
     setBusyAction("writing");
@@ -367,953 +425,424 @@ export function WritingWorkspace() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          style_profile_id: selectedStyleId,
+          style_profile_id: params.styleProfileId,
           requested_mode: "style_prompt_only",
           task: {
-            genre: writingGenre,
+            genre: params.genre,
             task_type: "新写",
-            title: title.trim(),
-            brief: brief.trim(),
-            target_length: targetLength.trim(),
+            title: params.title,
+            brief: params.brief,
+            target_length: params.targetLength,
             target_reader: "普通读者",
-            must_include: mustInclude,
-            must_avoid: mustAvoid,
+            must_include: params.mustInclude,
+            must_avoid: params.mustAvoid,
             eval_focus: "风格贴近但表达原创、任务完成度、自然段可编辑性",
-            style_intensity: styleIntensity
-          }
-        })
+            style_intensity: params.styleIntensity,
+          },
+        }),
       });
       const body = await parseJson<{ document: WritingDocument }>(response);
       setDocument(body.document);
       setGenerationCount(nextGenerationCount);
-      setRewriteDialogParagraphId("");
-      setRewriteInstruction("");
       setStatus(`第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`);
-      window.setTimeout(() => writingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setWritingError(`本次生成失败，右侧仍显示上一次文章。原因：${message}`);
+      setWritingError(`本次生成失败。原因：${message}`);
       setStatus(`生成失败：${message}`);
     } finally {
       setBusyAction(null);
     }
   }
 
-  async function deleteSelectedStyle() {
-    if (!requireAuth()) {
-      return;
+  async function handleSaveDocument(): Promise<void> {
+    if (!document) {
+      throw new Error("当前没有可保存的文章");
     }
-    setDeleteStyleError("");
-    if (!selectedStyle) {
-      setDeleteStyleError("请先选择要删除的风格。");
-      return;
+    const response = await fetch(`${apiBase()}/v1/documents/${document.id}/save`, {
+      method: "POST",
+      credentials: "include",
+    });
+    const updated = await parseJson<WritingDocument>(response);
+    setDocument(updated);
+    await loadSavedDocuments();
+  }
+
+  async function handleDownloadDocument(targetDocument?: WritingDocument): Promise<void> {
+    const doc = targetDocument || document;
+    if (!doc) {
+      throw new Error("当前没有可下载的文章");
     }
-    const shouldDelete = window.confirm(`确认删除风格“${selectedStyle.name}”吗？删除后它不会再出现在风格列表里，已生成文章不受影响。`);
-    if (!shouldDelete) {
-      return;
-    }
-    setBusyAction("delete_style");
-    setStatus(`正在删除风格“${selectedStyle.name}”……`);
+    setBusyDocumentId(doc.id);
     try {
-      const response = await fetch(`${apiBase()}/v1/style-profiles/${selectedStyle.id}`, {
-        method: "DELETE",
-        credentials: "include"
+      const response = await fetch(`${apiBase()}/v1/documents/${doc.id}/download/docx`, {
+        credentials: "include",
       });
-      await parseJson<{ id: string; status: string }>(response);
-      const nextStyles = styles.filter((style) => style.id !== selectedStyle.id);
-      setStyles(nextStyles);
-      const nextSelectedStyleId = nextStyles[0]?.id ?? "";
-      setSelectedStyleId(nextSelectedStyleId);
-      if (confirmedStyleId === selectedStyle.id) {
-        setConfirmedStyleId("");
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail ?? body.message ?? `HTTP ${response.status}`);
       }
-      if (!nextSelectedStyleId) {
-        setDocument(null);
-        setGenerationCount(0);
-      }
-      setStatus(`风格“${selectedStyle.name}”已删除。`);
-      await loadStyles();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setDeleteStyleError(message);
-      setStatus(`删除风格失败：${message}`);
+      const blob = await response.blob();
+      const filename = `${doc.title}.docx`.replace(/\s+/g, "_");
+      const url = window.URL.createObjectURL(blob);
+      const link = getDownloadAnchor();
+      if (!link) return;
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(url);
     } finally {
-      setBusyAction(null);
+      setBusyDocumentId(null);
     }
   }
 
-  async function rewriteParagraph() {
-    if (!requireAuth()) {
-      return;
+  function getDownloadAnchor(): HTMLAnchorElement | null {
+    if (typeof window === "undefined" || !window.document) return null;
+    let link = window.document.getElementById("download-docx-anchor") as HTMLAnchorElement | null;
+    if (!link) {
+      link = window.document.createElement("a");
+      link.id = "download-docx-anchor";
+      link.style.display = "none";
+      window.document.body.appendChild(link);
     }
-    setRewriteError("");
+    return link;
+  }
+
+  function handleOpenDocument(targetDocument: WritingDocument) {
+    setDocument(targetDocument);
+    setGenerationCount(1);
+    setCurrentView("reading");
+    setStatus(`已打开文章「${targetDocument.title}」。可继续修改或下载。`);
+  }
+
+  async function handleUnsaveDocument(documentId: string): Promise<void> {
+    setBusyDocumentId(documentId);
+    try {
+      const response = await fetch(`${apiBase()}/v1/documents/${documentId}/unsave`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await parseJson<WritingDocument>(response);
+      if (document?.id === documentId) {
+        setDocument((current) => (current ? { ...current, is_saved: false, saved_at: null } : current));
+      }
+      await loadSavedDocuments();
+      setStatus("文章已从个人库移除");
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
+
+  async function handleRewrite(paragraphId: string, instruction: string): Promise<string> {
     if (!document) {
-      setRewriteError("请选择要重写的自然段。");
-      setStatus("请选择要重写的自然段。");
-      return;
-    }
-    if (!rewriteDialogParagraphId) {
-      setRewriteError("请选择要重写的自然段。");
-      return;
-    }
-    const instruction = rewriteInstruction.trim();
-    if (!instruction) {
-      setRewriteError("请填写对选中自然段的修改意见。");
-      setStatus("请填写对选中自然段的修改意见。");
-      return;
+      throw new Error("文档不存在");
     }
     setBusyAction("rewrite");
     setStatus("正在重写指定自然段……");
     try {
       const response = await fetch(
-        `${apiBase()}/v1/documents/${document.id}/paragraphs/${rewriteDialogParagraphId}/rewrite`,
+        `${apiBase()}/v1/documents/${document.id}/paragraphs/${paragraphId}/rewrite`,
         {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instruction })
+          body: JSON.stringify({ instruction }),
+        }
+      );
+      const body = await parseJson<{ rewritten_content: string }>(response);
+      setStatus("AI 重写完成，请在弹窗中查看结果。");
+      return body.rewritten_content;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`段落重写失败：${message}`);
+      throw error;
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleOverwriteParagraph(paragraphId: string, newContent: string): Promise<void> {
+    if (!document) {
+      throw new Error("文档不存在");
+    }
+    setBusyAction("rewrite");
+    setStatus("正在保存修改……");
+    try {
+      const response = await fetch(
+        `${apiBase()}/v1/documents/${document.id}/paragraphs/${paragraphId}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newContent }),
         }
       );
       const updated = await parseJson<WritingDocument>(response);
       setDocument(updated);
-      setRewriteDialogParagraphId("");
-      setRewriteInstruction("");
-      setStatus("指定自然段已重写，其他自然段保持不变。");
+      setStatus("段落已更新。");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setRewriteError(message);
-      setStatus(`段落重写失败：${message}`);
+      setStatus(`段落保存失败：${message}`);
+      throw error;
     } finally {
       setBusyAction(null);
     }
   }
 
-  function openRewriteDialog(paragraph: DocumentParagraph) {
-    setRewriteDialogParagraphId(paragraph.id);
-    setRewriteInstruction("");
-    setRewriteError("");
-  }
-
-  function closeRewriteDialog() {
-    if (busyAction === "rewrite") {
-      return;
-    }
-    setRewriteDialogParagraphId("");
-    setRewriteInstruction("");
-    setRewriteError("");
-  }
-
-  function requireAuth() {
-    if (currentUser) {
-      return true;
-    }
-    setAuthMode("login");
-    setAuthDialogOpen(true);
-    setAuthError("");
-    setStatus("请先注册或登录，再继续使用作品上传、风格库和文章生成。");
-    return false;
-  }
-
-  async function submitAuth() {
-    setAuthError("");
-    if (!authUsername.trim()) {
-      setAuthError("请填写用户名。");
-      return;
-    }
-    if (!authPassword) {
-      setAuthError("请填写密码。");
-      return;
-    }
-    if (authMode === "register" && authPassword !== authConfirmPassword) {
-      setAuthError("两次输入的密码不一致。");
-      return;
-    }
+  async function handleLogout() {
     setBusyAction("confirm");
     try {
-      const response = await fetch(`${apiBase()}/v1/auth/${authMode === "login" ? "login" : "register"}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: authUsername.trim(),
-          password: authPassword,
-          confirm_password: authConfirmPassword,
-        }),
-      });
-      const body = await parseJson<{ user: CurrentUser }>(response);
-      setCurrentUser(body.user);
-      setPhoneNumber(body.user.phone_number ?? "");
-      setAuthDialogOpen(false);
-      setAuthPassword("");
-      setAuthConfirmPassword("");
-      setStatus(`已登录：${body.user.username}。可以继续使用工作台。`);
-      await Promise.all([loadMaterials(), loadStyles()]);
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : String(error));
+      await authLogout();
     } finally {
       setBusyAction(null);
     }
   }
 
-  async function logout() {
-    setBusyAction("confirm");
-    try {
-      await fetch(`${apiBase()}/v1/auth/logout`, { method: "POST", credentials: "include" });
-      setCurrentUser(null);
-      setMaterials([]);
-      setStyles([]);
-      setSelectedStyleId("");
-      setDocument(null);
-      setGenerationCount(0);
-      setAccountDialogOpen(false);
-      setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
-    } finally {
-      setBusyAction(null);
-    }
+  async function handleSendPhoneCode(phone: string): Promise<string> {
+    const response = await fetch(`${apiBase()}/v1/account/phone/send-code`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: phone }),
+    });
+    const body = await parseJson<{ debug_code: string }>(response);
+    return body.debug_code;
   }
 
-  async function sendPhoneCode() {
-    setAccountError("");
-    setAccountStatus("");
-    if (!requireAuth()) {
-      return;
-    }
-    setBusyAction("confirm");
-    try {
-      const response = await fetch(`${apiBase()}/v1/account/phone/send-code`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone_number: phoneNumber.trim() }),
-      });
-      const body = await parseJson<{ debug_code: string }>(response);
-      setPhoneDebugCode(body.debug_code);
-      setAccountStatus("测试验证码已生成。当前版本不真实发送短信，请使用下方显示的验证码。");
-    } catch (error) {
-      setAccountError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusyAction(null);
-    }
+  async function handleBindPhone(phone: string, code: string): Promise<CurrentUser> {
+    const response = await fetch(`${apiBase()}/v1/account/phone/bind`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: phone, code }),
+    });
+    const body = await parseJson<{ user: CurrentUser }>(response);
+    setCurrentUser(body.user);
+    return body.user;
   }
 
-  async function bindPhoneNumber() {
-    setAccountError("");
-    setAccountStatus("");
-    if (!requireAuth()) {
-      return;
-    }
-    setBusyAction("confirm");
-    try {
-      const response = await fetch(`${apiBase()}/v1/account/phone/bind`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone_number: phoneNumber.trim(), code: phoneCode.trim() }),
-      });
-      const body = await parseJson<{ user: CurrentUser }>(response);
-      setCurrentUser(body.user);
-      setPhoneDebugCode("");
-      setPhoneCode("");
-      setAccountStatus("手机号已绑定。");
-    } catch (error) {
-      setAccountError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusyAction(null);
-    }
+  async function handleSendEmailCode(email: string): Promise<string> {
+    const response = await fetch(`${apiBase()}/v1/account/email/send-code`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const body = await parseJson<{ debug_code: string }>(response);
+    return body.debug_code;
   }
+
+  async function handleBindEmail(email: string, code: string): Promise<CurrentUser> {
+    const response = await fetch(`${apiBase()}/v1/account/email/bind`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code }),
+    });
+    const body = await parseJson<{ user: CurrentUser }>(response);
+    setCurrentUser(body.user);
+    return body.user;
+  }
+
+  async function handleChangePassword(
+    oldPassword: string,
+    newPassword: string,
+    confirmPassword: string
+  ): Promise<void> {
+    const response = await fetch(`${apiBase()}/v1/account/password/change`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        old_password: oldPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      }),
+    });
+    await parseJson<{ user: CurrentUser }>(response);
+  }
+
+  function handleNavigate(view: ViewName) {
+    setCurrentView(view);
+  }
+
+  const viewMeta = viewTitles[currentView];
 
   return (
-    <main className="shell">
-      <section className="hero">
-        <div>
-          <h1>个人风格写作 SaaS · MVP1</h1>
-          <p>
-            用户可以上传参考作品，建立自己的风格库，并按选定风格生成、修改文章。
-          </p>
-        </div>
-        <div className="hero-actions">
-          <div className="badge">{currentUser ? `已登录：${currentUser.username}` : "未登录可预览 / 创建资产需登录"}</div>
-          {currentUser ? (
-            <button className="secondary" type="button" onClick={() => setAccountDialogOpen(true)}>
-              账号
-            </button>
-          ) : (
-            <button
-              className="primary"
-              type="button"
-              onClick={() => {
-                setAuthMode("login");
-                setAuthDialogOpen(true);
-                setAuthError("");
-              }}
-            >
-              登录 / 注册
-            </button>
-          )}
-        </div>
-      </section>
-
-      <section className="status-bar">{busy ? "处理中…… " : ""}{status}<span className="model-chip">模型：{modelStatus ? `${modelStatus.mode} / ${modelStatus.model_name} / ${modelStatus.fallback_behavior}` : "读取中"}</span></section>
-
-      <section className="dashboard">
-        <div className="metric">
-          <span>作品</span>
-          <strong>{materials.length}</strong>
-        </div>
-        <div className="metric">
-          <span>已确认风格</span>
-          <strong>{styles.length}</strong>
-        </div>
-        <div className="metric">
-          <span>当前风格</span>
-          <strong>{selectedStyle?.name ?? "未选择"}</strong>
-        </div>
-      </section>
-
-      <section className="workflow-linear">
-        <div className="panel start-panel">
-          <div className="step-heading">
-            <h2>选择开始方式</h2>
-            <span>{startMode === "create_style" ? "创建新风格" : "使用已有风格"}</span>
+    <div className="app-shell">
+      <Sidebar currentView={currentView} onNavigate={handleNavigate} />
+      <div className="main-area">
+        <div className="topbar">
+          <div className="topbar-left">
+            <span className="topbar-title">{viewMeta.title}</span>
+            {viewMeta.subtitle ? <span className="topbar-subtitle">{viewMeta.subtitle}</span> : null}
           </div>
-          <p className="small">可以上传新的参考文章生成风格，也可以直接使用以前保存过的风格写文章。</p>
-          <div className="start-mode-grid">
-            <button
-              className={`choice-card ${startMode === "create_style" ? "selected" : ""}`}
-              type="button"
-              onClick={() => {
-                setStartMode("create_style");
-                setStartModeTouched(true);
-                setSelectedStyleId("");
-                setWritingError("");
-              }}
-            >
-              <strong>上传参考作品，创建新风格</strong>
-              <span>适合第一次使用，或要分析一个新的作者/新风格。</span>
-            </button>
-            <button
-              className={`choice-card ${startMode === "use_existing" ? "selected" : ""}`}
-              type="button"
-              onClick={() => {
-                if (!requireAuth()) {
-                  return;
-                }
-                setStartMode("use_existing");
-                setStartModeTouched(true);
-                setSelectedStyleId((current) => current || styles[0]?.id || "");
-                setWritingError("");
-              }}
-            >
-              <strong>使用已有风格写文章</strong>
-              <span>适合已经保存过风格，想直接进入写作。</span>
-            </button>
-          </div>
-        </div>
-
-        {startMode === "create_style" ? (
-          <>
-        <div className="panel step-panel">
-          <div className="step-heading">
-            <h2>A1. 上传作品并分析风格</h2>
-            <span>{styleJob ? "已生成风格草案" : busyAction === "upload" || busyAction === "analysis" ? "进行中" : "未开始"}</span>
-          </div>
-          <p className="small">支持一次选择多篇风格相近的 .txt/.md/.docx 作品。</p>
-          <div className="field">
-            <label>作品文体</label>
-            <select value={uploadGenre} onChange={(event) => setUploadGenre(event.target.value)}>
-              {GENRES.map((genre) => (
-                <option key={genre} value={genre}>{genre}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>文件</label>
-            <input
-              multiple
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.md,.docx"
-              onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                setFiles(event.target.files);
-                setUploadError("");
-              }}
-            />
-          </div>
-          <button className="primary" type="button" disabled={busy} onClick={uploadMaterials}>
-            {busyAction === "upload"
-              ? "正在上传解析……"
-              : busyAction === "analysis"
-                ? "正在分析风格……"
-                : "上传作品并分析风格"}
-          </button>
-          {uploadError ? <p className="inline-error" role="alert">{uploadError}</p> : null}
-          {analysisError ? <p className="inline-error" role="alert">{analysisError}</p> : null}
-          <p className="inline-status" aria-live="polite">
-            {styleJob ? "风格分析完成。请继续确认风格。" : "选择文件后点击按钮，系统会自动完成上传、解析和风格分析。"}
-          </p>
-        </div>
-
-        <div className="panel step-panel">
-          <div className="step-heading">
-            <h2>A2. 确认并保存新风格</h2>
-            <span>{confirmedStyleId ? "已保存" : styleJob ? "待确认" : "请先完成 A1"}</span>
-          </div>
-          {styleDraftView ? (
-            <div className="style-summary-card">
-              <strong>我们理解到的作者风格</strong>
-              <p>{styleDraftView.plainSummary}</p>
-              <div className="report-sections">
-                {styleDraftView.dimensions.map((dimension) => (
-                  <section className="report-section" key={dimension.key}>
-                    <h3>{dimension.title}：</h3>
-                    {dimension.whatWeFound.map((item) => <p key={item}>{item}</p>)}
-                    <small>{dimension.whyItMatters}</small>
-                  </section>
-                ))}
-                <section className="report-section">
-                  <h3>写作时必须做到：</h3>
-                  {styleDraftView.mustDo.map((item) => <p key={item}>{item}</p>)}
-                </section>
-                <section className="report-section">
-                  <h3>必须避免：</h3>
-                  {styleDraftView.mustAvoid.map((item) => <p key={item}>{item}</p>)}
-                </section>
-                <section className="report-section">
-                  <h3>判断依据：</h3>
-                  {styleDraftView.evidence.map((item) => <p key={item}>{item}</p>)}
-                </section>
-              </div>
-            </div>
-          ) : (
-            <div className="empty-preview">
-              <strong>还没有风格分析结果</strong>
-              <p>上传作品并分析完成后，这里会展示系统提炼出的作者风格。</p>
-            </div>
-          )}
-          <div className="field">
-            <label>风格名称</label>
-            <input
-              value={styleName}
-              disabled={Boolean(confirmedStyleId) || !styleJob}
-              onChange={(event) => {
-                setStyleName(event.target.value);
-                setConfirmError("");
-              }}
-            />
-          </div>
-          <details className="advanced-json">
-            <summary>高级：查看和编辑完整风格档案数据</summary>
-            <div className="field">
-              <label>风格分析结果（确认前可编辑）</label>
-              <textarea
-                className="profile-json"
-                value={profileJson}
-                disabled={Boolean(confirmedStyleId)}
-                onChange={(event) => {
-                  setProfileJson(event.target.value);
-                  setConfirmError("");
-                }}
-              />
-            </div>
-          </details>
-          <button className="primary" type="button" disabled={busy || !styleJob || Boolean(confirmedStyleId)} onClick={confirmStyle}>
-            {confirmedStyleId ? "已保存到风格库" : busyAction === "confirm" ? "正在保存……" : "确认并保存到风格库"}
-          </button>
-          {confirmError ? <p className="inline-error" role="alert">{confirmError}</p> : null}
-          {confirmedStyleId ? <p className="inline-success">当前风格已保存。需要新风格时，请重新上传一组作品分析。</p> : null}
-        </div>
-          </>
-        ) : (
-        <div className="panel step-panel">
-          <div className="step-heading">
-            <h2>选择已有风格</h2>
-            <span>{selectedStyleId ? "已选择" : styles.length > 0 ? "待选择" : "暂无风格"}</span>
-          </div>
-          {styles.length === 0 ? (
-            <div className="empty-preview">
-              <strong>还没有保存过风格</strong>
-              <p>请切换到“上传参考作品，创建新风格”，先上传参考文章并确认保存一个风格。</p>
-            </div>
-          ) : (
-            <>
-              <p className="small">选择一个已保存风格后，可以直接在下方写作。</p>
-              <div className="field">
-                <label>选择已有风格</label>
-                <div className="style-select-row">
-                  <select value={selectedStyleId} onChange={(event) => setSelectedStyleId(event.target.value)}>
-                    <option value="">请选择已确认风格</option>
-                    {styles.map((style) => (
-                      <option key={style.id} value={style.id}>{style.name}</option>
-                    ))}
-                  </select>
-                  <button className="danger-secondary" type="button" disabled={busy || !selectedStyleId} onClick={deleteSelectedStyle}>
-                    {busyAction === "delete_style" ? "正在删除……" : "删除这个风格"}
-                  </button>
-                </div>
-              </div>
-              {deleteStyleError ? <p className="inline-error" role="alert">{deleteStyleError}</p> : null}
-            </>
-          )}
-        </div>
-        )}
-
-        <div className="panel step-panel" ref={writingRef}>
-          <div className="step-heading">
-            <h2>写作与修改文章</h2>
-            <span>{document ? `第 ${generationCount} 版` : selectedStyleId ? "可生成" : "请先选择风格"}</span>
-          </div>
-          <p className="small">生成文章和段落修改放在同一区域。文章生成后，把鼠标移到自然段上会高亮，点击“修改这一段”填写修改意见。</p>
-          {selectedStyle ? (
-            <p className="current-style-note">当前使用风格：{selectedStyle.name}</p>
-          ) : (
-            <div className="empty-preview">
-              <strong>请先选择一个风格</strong>
-              <p>可以在上方创建新风格，也可以切换到“使用已有风格写文章”选择风格。</p>
-            </div>
-          )}
-          <div className="field">
-            <label>写作文体</label>
-            <select
-              value={writingGenre}
-              onChange={(event) => {
-                const nextGenre = event.target.value;
-                setWritingGenre(nextGenre);
-                setTargetLength((current) => {
-                  if (current === "1200字" || current === "12行") {
-                    return nextGenre === "诗歌" ? "12行" : "1200字";
-                  }
-                  return current;
-                });
-              }}
-            >
-              {GENRES.map((genre) => (
-                <option key={genre} value={genre}>{genre}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>目标字数 / 篇幅</label>
-            <input value={targetLength} onChange={(event) => setTargetLength(event.target.value)} placeholder="例如：800字、1200字、12行、3000字" />
-            <small>生成时会把这个要求传给模型；诗歌可填“12行”，散文/小说/故事建议填“800字、1200字、3000字”。</small>
-          </div>
-          <div className="field">
-            <label>风格贴近程度</label>
-            <select value={styleIntensity} onChange={(event) => setStyleIntensity(event.target.value)}>
-              <option value="light">轻度参考：只参考语气和节奏，表达更原创</option>
-              <option value="balanced">平衡仿写：保留文风特征，避免像改写稿</option>
-              <option value="close">高度贴近：更接近句法节奏，仅用于内部测试</option>
-            </select>
-            <small>默认建议使用“平衡仿写”。如果觉得太像原文，可以改成“轻度参考”。</small>
-          </div>
-          <div className="field">
-            <label>标题 / 主题</label>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} />
-          </div>
-          <div className="field">
-            <label>写作要求</label>
-            <textarea value={brief} onChange={(event) => setBrief(event.target.value)} />
-          </div>
-          <div className="field">
-            <label>必须包含</label>
-            <input value={mustInclude} onChange={(event) => setMustInclude(event.target.value)} />
-          </div>
-          <div className="field">
-            <label>必须避免</label>
-            <input value={mustAvoid} onChange={(event) => setMustAvoid(event.target.value)} />
-          </div>
-          <button className="primary" type="button" disabled={busy || !selectedStyleId} onClick={createWritingTask}>
-            {busyAction === "writing" ? "正在生成文章……" : "按选定风格生成文章"}
-          </button>
-          {writingError ? <p className="inline-error" role="alert">{writingError}</p> : null}
-          
-          {!document ? (
-            <div className="empty-preview">
-              <strong>还没有生成文章</strong>
-              <p>填写主题、字数和写作要求后，点击“按选定风格生成文章”。生成完成后，全文和段落修改入口会显示在这里。</p>
-            </div>
-          ) : (
-            <article className="document-preview inline-document-editor">
-              <div className="document-title">
-                <strong>{document.title}</strong>
-                <span>{document.genre} · 第 {generationCount} 版 · {document.paragraphs.length} 段 · 约 {document.content.length} 字 · {documentUpdatedAt} · ID {document.id.slice(-6)}</span>
-              </div>
-              {document.paragraphs.map((paragraph) => (
-                <section
-                  className={`readable-paragraph ${rewriteDialogParagraphId === paragraph.id ? "active" : ""}`}
-                  key={paragraph.id}
-                  onClick={() => openRewriteDialog(paragraph)}
+          <div className="topbar-right">
+            {currentUser ? (
+              <>
+                <span className="badge badge-neutral">{currentUser.username}</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  onClick={() => setCurrentView("settings")}
                 >
-                  <button
-                    className="paragraph-edit-button"
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openRewriteDialog(paragraph);
-                    }}
-                  >
-                    修改这一段
-                  </button>
-                  <p>{paragraph.content}</p>
-                  <small>第 {paragraph.position} 段 · 重写 {paragraph.rewrite_count} 次</small>
-                </section>
-              ))}
-            </article>
-          )}
-          {rewriteDialogParagraph ? (
-            <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rewrite-dialog-title">
-              <div className="modal-card">
-                <div className="modal-header">
-                  <h3 id="rewrite-dialog-title">修改第 {rewriteDialogParagraph.position} 段</h3>
-                  <button className="modal-close" type="button" disabled={busyAction === "rewrite"} onClick={closeRewriteDialog}>
-                    ×
-                  </button>
-                </div>
-                <div className="rewrite-preview">
-                  <p>{rewriteDialogParagraph.content}</p>
-                </div>
-                <div className="field">
-                  <label>修改意见</label>
-                  <textarea
-                    value={rewriteInstruction}
-                    placeholder="例如：更克制一点，减少解释，保留画面感。"
-                    onChange={(event) => {
-                      setRewriteInstruction(event.target.value);
-                      setRewriteError("");
-                    }}
-                  />
-                </div>
-                {rewriteError ? <p className="inline-error" role="alert">{rewriteError}</p> : null}
-                <div className="modal-actions">
-                  <button className="secondary" type="button" disabled={busyAction === "rewrite"} onClick={closeRewriteDialog}>
-                    取消
-                  </button>
-                  <button className="primary" type="button" disabled={busy} onClick={rewriteParagraph}>
-                    {busyAction === "rewrite" ? "正在重写……" : "重写这一段"}
-                  </button>
-                </div>
+                  账号
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                onClick={() => openAuth("login")}
+              >
+                登录 / 注册
+              </button>
+            )}
+          </div>
+        </div>
+
+        {status ? (
+          <div className="status-bar" style={{ margin: "16px auto 0", width: "80vw", maxWidth: "100%" }}>
+            {busy ? "处理中…… " : ""}
+            {status}
+            {modelStatus ? (
+              <span className="model-chip">
+                模型：{modelStatus.mode} / {modelStatus.model_name} / {modelStatus.fallback_behavior}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div
+          className={`content-area ${currentView === "writing" || currentView === "reading" ? "wide-content" : ""}`}
+          style={status ? { paddingTop: "8px" } : undefined}
+        >
+          {currentView === "dashboard" ? (
+            <DashboardView
+              currentUser={currentUser}
+              materials={materials}
+              styles={styles}
+              savedDocuments={savedDocuments}
+              generationCount={generationCount}
+              onNavigate={handleNavigate}
+              onOpenDocument={handleOpenDocument}
+            />
+          ) : null}
+
+          {currentView === "styles" ? (
+            <StylesView
+              styles={styles}
+              selectedStyleId={selectedStyleId}
+              busyAction={busyAction}
+              deleteStyleError={deleteStyleError}
+              onStartWriting={handleStartWriting}
+              onDeleteStyle={handleDeleteStyle}
+              onEditStyle={handleOpenEditStyle}
+              onSetDefaultStyle={handleSetDefaultStyle}
+              onNewStyle={handleOpenNewStyle}
+            />
+          ) : null}
+
+          {currentView === "writing" ? (
+            <WritingView
+              styles={styles}
+              selectedStyleId={selectedStyleId}
+              onSelectStyle={setSelectedStyleId}
+              document={document}
+              generationCount={generationCount}
+              busyAction={busyAction}
+              writingError={writingError}
+              onGenerate={handleGenerate}
+              onRewrite={handleRewrite}
+              onOverwriteParagraph={handleOverwriteParagraph}
+              onSaveDocument={handleSaveDocument}
+              onDownloadDocument={() => handleDownloadDocument()}
+            />
+          ) : null}
+
+          {currentView === "reading" ? (
+            document ? (
+              <DocumentReader
+                document={document}
+                generationCount={generationCount}
+                busyAction={busyAction}
+                onRewrite={handleRewrite}
+                onOverwriteParagraph={handleOverwriteParagraph}
+                onDownloadDocument={() => handleDownloadDocument()}
+                showSaveButton={false}
+                showBackButton
+                onBack={() => setCurrentView("articles")}
+              />
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-title">没有选中的文章</div>
+                <div className="empty-state-desc">请从文章库中选择一篇文章打开。</div>
               </div>
-            </div>
+            )
+          ) : null}
+
+          {currentView === "articles" ? (
+            <ArticlesView
+              documents={savedDocuments}
+              busyDocumentId={busyDocumentId}
+              onOpenDocument={handleOpenDocument}
+              onDownloadDocument={handleDownloadDocument}
+              onUnsaveDocument={handleUnsaveDocument}
+              onNavigate={handleNavigate}
+            />
+          ) : null}
+
+          {currentView === "settings" ? (
+            <SettingsView
+              currentUser={currentUser}
+              materials={materials}
+              styles={styles}
+              generationCount={generationCount}
+              busyAction={busyAction}
+              onSendPhoneCode={handleSendPhoneCode}
+              onBindPhone={handleBindPhone}
+              onSendEmailCode={handleSendEmailCode}
+              onBindEmail={handleBindEmail}
+              onChangePassword={handleChangePassword}
+              onLogout={handleLogout}
+            />
           ) : null}
         </div>
-      </section>
-      {authDialogOpen ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
-          <div className="modal-card auth-card">
-            <div className="modal-header">
-              <h3 id="auth-dialog-title">{authMode === "login" ? "登录账号" : "注册账号"}</h3>
-              <button className="modal-close" type="button" disabled={busy} onClick={() => setAuthDialogOpen(false)}>
-                ×
-              </button>
-            </div>
-            <div className="auth-tabs">
-              <button
-                className={authMode === "login" ? "selected" : ""}
-                type="button"
-                onClick={() => {
-                  setAuthMode("login");
-                  setAuthError("");
-                }}
-              >
-                登录
-              </button>
-              <button
-                className={authMode === "register" ? "selected" : ""}
-                type="button"
-                onClick={() => {
-                  setAuthMode("register");
-                  setAuthError("");
-                }}
-              >
-                注册
-              </button>
-            </div>
-            <p className="small">用户名 6–32 位，只允许英文字母、数字、下划线。密码 8–64 位，至少包含 1 个字母和 1 个数字。</p>
-            <div className="field">
-              <label>用户名</label>
-              <input value={authUsername} onChange={(event) => setAuthUsername(event.target.value)} />
-            </div>
-            <div className="field">
-              <label>密码</label>
-              <input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
-            </div>
-            {authMode === "register" ? (
-              <div className="field">
-                <label>确认密码</label>
-                <input
-                  type="password"
-                  value={authConfirmPassword}
-                  onChange={(event) => setAuthConfirmPassword(event.target.value)}
-                />
-              </div>
-            ) : null}
-            <button className="primary" type="button" disabled={busy} onClick={submitAuth}>
-              {busy ? "处理中……" : authMode === "login" ? "登录" : "注册并登录"}
-            </button>
-            <button className="link-button" type="button" onClick={() => setAuthError("手机号找回密码入口已预留，完整流程后续接入。")}>
-              忘记密码？
-            </button>
-            {authError ? <p className="inline-error" role="alert">{authError}</p> : null}
-          </div>
-        </div>
+      </div>
+
+      {newStyleModalOpen ? (
+        <NewStyleModal
+          styleJob={styleJob}
+          styleDraftView={styleDraftView}
+          styleName={styleName}
+          profileJson={profileJson}
+          confirmedStyleId={confirmedStyleId}
+          uploadGenre={uploadGenre}
+          busyAction={busyAction}
+          uploadError={uploadError}
+          analysisError={analysisError}
+          confirmError={confirmError}
+          onUploadGenreChange={setUploadGenre}
+          onStyleNameChange={setStyleName}
+          onProfileJsonChange={setProfileJson}
+          onUpload={handleUpload}
+          onConfirm={handleConfirmStyle}
+          onClose={handleCloseNewStyle}
+        />
       ) : null}
-      {accountDialogOpen && currentUser ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title">
-          <div className="modal-card auth-card">
-            <div className="modal-header">
-              <h3 id="account-dialog-title">账号设置</h3>
-              <button className="modal-close" type="button" disabled={busy} onClick={() => setAccountDialogOpen(false)}>
-                ×
-              </button>
-            </div>
-            <div className="account-summary">
-              <span>用户名</span>
-              <strong>{currentUser.username}</strong>
-              <span>手机号</span>
-              <strong>{currentUser.phone_number ? `${currentUser.phone_number}（已绑定）` : "未绑定"}</strong>
-            </div>
-            <div className="field">
-              <label>绑定手机号</label>
-              <input value={phoneNumber} placeholder="例如：13800138000" onChange={(event) => setPhoneNumber(event.target.value)} />
-              <small>当前只支持中国大陆手机号。验证码为测试模式，不真实发送短信。</small>
-            </div>
-            <button className="secondary" type="button" disabled={busy} onClick={sendPhoneCode}>
-              {busy ? "处理中……" : "发送测试验证码"}
-            </button>
-            {phoneDebugCode ? <p className="inline-status">测试验证码：{phoneDebugCode}</p> : null}
-            <div className="field">
-              <label>验证码</label>
-              <input value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} />
-            </div>
-            <div className="modal-actions">
-              <button className="danger-secondary" type="button" disabled={busy} onClick={logout}>
-                退出登录
-              </button>
-              <button className="primary" type="button" disabled={busy} onClick={bindPhoneNumber}>
-                绑定手机号
-              </button>
-            </div>
-            {accountStatus ? <p className="inline-status">{accountStatus}</p> : null}
-            {accountError ? <p className="inline-error" role="alert">{accountError}</p> : null}
-          </div>
-        </div>
+
+      {editingStyle ? (
+        <EditStyleModal
+          style={editingStyle}
+          styleName={editStyleName}
+          profileJson={editProfileJson}
+          busyAction={busyAction}
+          editError={editStyleError}
+          onNameChange={setEditStyleName}
+          onProfileJsonChange={setEditProfileJson}
+          onSave={handleSaveEditStyle}
+          onClose={handleCloseEditStyle}
+        />
       ) : null}
-    </main>
+    </div>
   );
 }
-
-function summarizeStyleDraft(profile: Record<string, unknown> | undefined): StyleDraftView | null {
-  if (!profile) {
-    return null;
-  }
-  const shouldUseChineseOnly = asString(profile.source_language) !== "english";
-  const report = asRecord(profile.display_report);
-  const writingRules = asRecord(report.writing_rules_plain);
-  let dimensions = asRecordList(report.dimensions).map((item) => ({
-    key: asString(item.key) || asString(item.title),
-    title: cleanDisplayText(asString(item.title), shouldUseChineseOnly),
-    whatWeFound: asStringList(item.what_we_found).map((text) => cleanDisplayText(text, shouldUseChineseOnly)).filter(Boolean),
-    whyItMatters: cleanDisplayText(asString(item.why_it_matters), shouldUseChineseOnly),
-    editableSummary: cleanDisplayText(asString(item.editable_summary), shouldUseChineseOnly),
-  })).filter((item) => item.title);
-  if (dimensions.length === 0) {
-    dimensions = buildFallbackDimensions(profile);
-  }
-  dimensions = dimensions.map((item) => ({
-    ...item,
-    title: cleanDisplayText(item.title, shouldUseChineseOnly),
-    whatWeFound: item.whatWeFound.map((text) => cleanDisplayText(text, shouldUseChineseOnly)).filter(Boolean),
-    whyItMatters: cleanDisplayText(item.whyItMatters, shouldUseChineseOnly),
-    editableSummary: cleanDisplayText(item.editableSummary, shouldUseChineseOnly),
-  }));
-  const generationRules = asRecord(profile.generation_rules);
-  const legacyImagery = asRecord(profile.imagery);
-  const legacyPromptRules = asStringList(profile.prompt_rules);
-  return {
-    plainSummary: cleanDisplayText(asString(report.plain_summary) || asString(profile.summary) || "已生成结构化风格草案。", shouldUseChineseOnly),
-    dimensions,
-    mustDo: firstNonEmptyStringList(writingRules.must_do, generationRules.must_do, legacyPromptRules).slice(0, 5).map((text) => cleanDisplayText(text, shouldUseChineseOnly)).filter(Boolean),
-    mustAvoid: firstNonEmptyStringList(writingRules.must_avoid, generationRules.must_avoid, legacyImagery.avoid).slice(0, 5).map((text) => cleanDisplayText(text, shouldUseChineseOnly)).filter(Boolean),
-    evidence: firstNonEmptyStringList(report.evidence_plain, buildFallbackEvidence(profile)).slice(0, 6).map((text) => cleanDisplayText(text, shouldUseChineseOnly)).filter(Boolean),
-  };
-}
-
-function buildFallbackDimensions(profile: Record<string, unknown>): StyleDraftView["dimensions"] {
-  const voice = asRecord(profile.voice);
-  const syntax = asRecord(profile.syntax);
-  const imagery = asRecord(profile.imagery);
-  const structure = asRecord(profile.structure);
-  const sourceStats = asRecord(profile.source_stats);
-  const lexical = asRecord(profile.lexical_style);
-  const syntaxStyle = asRecord(profile.syntax_style);
-  const rhetoric = asRecord(profile.rhetoric_style);
-  const narrative = asRecord(profile.narrative_style);
-  const tone = asRecord(profile.emotional_tone);
-  const topic = asRecord(profile.topic_boundary);
-  const language = asRecord(profile.language_period_style);
-  return [
-    {
-      key: "lexical_syntax",
-      title: "词汇和句子",
-      whatWeFound: [
-        textOrDefault(joinMaybe(lexical.noun_preference), "系统倾向认为作者更依赖具体名词和现场细节，而不是抽象概念。"),
-        asString(syntaxStyle.sentence_length_pattern) || asStringList(syntax.sentence_patterns).join("；") || `平均自然段约 ${asStringOrNumber(syntax.avg_paragraph_chars) || asStringOrNumber(sourceStats.avg_paragraph_chars) || "未知"} 字。`,
-        asString(syntaxStyle.paragraph_length_pattern) || "文章保留自然段节奏，不建议改成提纲式表达。",
-      ],
-      whyItMatters: "这决定了生成文章时用哪些词、句子长短怎么安排、读起来是否像原作者。",
-      editableSummary: "如果你觉得作者其实更口语、更书面、更爱长句或更爱短句，可以直接修改完整 JSON。",
-    },
-    {
-      key: "rhetoric_expression",
-      title: "修辞和表达",
-      whatWeFound: [
-        textOrDefault(joinMaybe(rhetoric.imagery_sources), "系统目前主要从参考段落里提取意象，后续写作应学习意象类型，不复制原句。"),
-        asString(rhetoric.metaphor_pattern) || "比喻和修辞应贴近原文的生活经验，不主动炫技。",
-        textOrDefault(summarizeSensoryFocusFromClient(rhetoric.sensory_focus), "感官侧重暂未细分，建议用户确认视觉、听觉、气味等是否准确。"),
-      ],
-      whyItMatters: "这决定了仿写时是多写自然、旧物、市井、典故，还是多写抽象感受。",
-      editableSummary: "如果系统误判了作者常用意象或比喻来源，可以直接修改完整 JSON。",
-    },
-    {
-      key: "narrative_structure",
-      title: "叙事和结构",
-      whatWeFound: [
-        asString(structure.opening) || joinMaybe(narrative.opening_patterns) || "常从具体物件、动作、声音或地点进入。",
-        asString(structure.development) || joinMaybe(narrative.development_patterns) || "中间围绕细节推进，不急于解释主题。",
-        asString(structure.ending) || joinMaybe(narrative.ending_patterns) || "结尾用场景、动作或物件收束，少做直白总结。",
-      ],
-      whyItMatters: "这决定了文章是先讲观点、先给画面，还是先进入人物和动作。",
-      editableSummary: "如果原作者有固定起手式、转折方式或结尾方式，可以直接修改完整 JSON。",
-    },
-    {
-      key: "emotion_tone",
-      title: "情绪和基调",
-      whatWeFound: [
-        `整体语气：${joinMaybe(voice.tone) || asString(tone.emotion_intensity) || "克制、具体，保留作者自己的观察角度"}。`,
-        `叙述距离：${asString(voice.narrative_distance) || asString(tone.restraint_level) || "贴近个人经验和现场细节"}。`,
-        `核心母题：${joinMaybe(tone.core_motifs) || "时间、记忆、日常经验或现场观察"}。`,
-      ],
-      whyItMatters: "这决定了生成内容是热烈直白、冷静克制，还是带幽默、讽刺或伤感。",
-      editableSummary: "如果你觉得作者情绪更强、更冷、更幽默或更尖锐，可以直接修改完整 JSON。",
-    },
-    {
-      key: "topic_material",
-      title: "题材和人物",
-      whatWeFound: [
-        `常见场景：${joinMaybe(topic.common_scenes) || "需要根据更多作品继续确认"}。`,
-        `常见人物：${joinMaybe(topic.common_character_types) || "普通生活中的人、家人、路过者或观察对象"}。`,
-        `适合题材：${joinMaybe(topic.suitable_topics) || joinMaybe(profile.applicable_genres) || "散文、随笔、生活观察"}。`,
-      ],
-      whyItMatters: "这决定了系统以后选择什么生活素材和人物类型来承载风格。",
-      editableSummary: "如果作者更常写乡村、城市、家庭、历史或某类人物，可以直接修改完整 JSON。",
-    },
-    {
-      key: "period_register",
-      title: "时代和语体",
-      whatWeFound: [
-        `语言时代感：${asString(language.modernity) || "现代汉语书面语"}。`,
-        `书面/口语特点：${joinMaybe(language.classical_or_colloquial_features) || "贴近日常表达，但不主动加入网络语"}。`,
-        `方言或地域特征：${joinMaybe(language.dialect_or_regional_features) || "暂未发现明显方言特征"}。`,
-      ],
-      whyItMatters: "这决定了生成文章是现代白话、半文半白、口语化，还是带地域表达。",
-      editableSummary: "如果作者有明显口头语、方言、年代感或文言残留，可以直接修改完整 JSON。",
-    },
-  ].map((item) => ({
-    ...item,
-    whatWeFound: item.whatWeFound.filter(Boolean),
-  }));
-}
-
-function buildFallbackEvidence(profile: Record<string, unknown>): string[] {
-  const evidence = asRecordList(profile.evidence_map).map((item) => {
-    const title = asString(item.material_title) || "参考作品";
-    const paragraphIndex = asStringOrNumber(item.paragraph_index) || "?";
-    const claim = asString(item.claim) || "用于判断文章风格";
-    return `${title} 第 ${paragraphIndex} 段：${claim}`;
-  });
-  if (evidence.length > 0) {
-    return evidence;
-  }
-  return asStringList(profile.source_titles).map((title) => `${title}：用于提炼这份风格草案`);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function asStringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function asRecordList(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
-}
-
-function firstNonEmptyStringList(...values: unknown[]): string[] {
-  for (const value of values) {
-    const list = Array.isArray(value) ? asStringList(value) : typeof value === "string" ? [value] : [];
-    if (list.length > 0) {
-      return list;
-    }
-  }
-  return [];
-}
-
-function joinMaybe(value: unknown): string {
-  const list = asStringList(value);
-  return list.length > 0 ? list.slice(0, 6).join("、") : "";
-}
-
-function textOrDefault(value: string, fallback: string): string {
-  return value.trim() ? value : fallback;
-}
-
-function asStringOrNumber(value: unknown): string {
-  return typeof value === "string" || typeof value === "number" ? String(value) : "";
-}
-
-function summarizeSensoryFocusFromClient(value: unknown): string {
-  const focus = asRecord(value);
-  const labels: Record<string, string> = {
-    visual: "视觉",
-    auditory: "听觉",
-    smell: "嗅觉",
-    touch: "触觉",
-    taste: "味觉",
-  };
-  return Object.entries(focus)
-    .filter(([, item]) => typeof item === "string" && item)
-    .map(([key, item]) => `${labels[key] ?? key}：${item}`)
-    .join("；");
-}
-
-function cleanDisplayText(value: string, shouldUseChineseOnly: boolean): string {
-  if (!shouldUseChineseOnly) {
-    return value;
-  }
-  return value
-    .replace(/\bAI\b/g, "人工智能")
-    .replace(/\bJSON\b/g, "数据")
-    .replace(/\bStyle\s*Profile\b/g, "风格档案")
-    .replace(/\([^()\u4e00-\u9fff]*[A-Za-z][^()\u4e00-\u9fff]*\)/g, "")
-    .replace(/\b[A-Za-z][A-Za-z0-9_-]*\b/g, "")
-    .replace(/\s*\/\s*/g, "、")
-    .replace(/\s+/g, " ")
-    .replace(/：\s*[。；，]/g, "：暂未判断。")
-    .replace(/[（(]\s*[）)]/g, "")
-    .trim();
-}
-
-
-
-
-
-
-
-
-
-
-
