@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { BusyAction, CurrentUser, Material, QuotaView, StyleProfile, UsageRecord } from "@/lib/types";
 import { fetchUsage } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 type SettingsViewProps = {
   currentUser: CurrentUser | null;
@@ -69,10 +70,31 @@ export function SettingsView({
   const [passwordError, setPasswordError] = useState("");
   const [showPasswordSuccessModal, setShowPasswordSuccessModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "security" | "usage" | "privacy">(initialTab);
+
+  // 密码修改成功弹窗：ESC 关闭
+  useEscapeClose(() => setShowPasswordSuccessModal(false), showPasswordSuccessModal);
   const [usageRecords, setUsageRecords] = useState<UsageRecord[]>([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
   const busy = busyAction !== null;
+
+  /* 界面主题（纸墨 / 墨韵紫 / 瑞士现代），保存在本机 localStorage */
+  const THEME_KEY = "moxx-theme";
+  type ThemeName = "ink" | "violet" | "swiss";
+  const [theme, setTheme] = useState<ThemeName>("ink");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === "ink" || saved === "violet" || saved === "swiss") setTheme(saved);
+    } catch {}
+  }, []);
+  function applyTheme(next: ThemeName) {
+    setTheme(next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+      document.documentElement.setAttribute("data-theme", next);
+    } catch {}
+  }
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -220,6 +242,139 @@ export function SettingsView({
 
       {activeTab === "profile" ? (
         <div style={{ display: "grid", gap: "20px" }}>
+          <div className="card">
+            <div className="settings-section-title">界面主题</div>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => applyTheme("ink")}
+                style={{
+                  flex: "1 1 200px",
+                  textAlign: "left",
+                  padding: "14px",
+                  borderRadius: "var(--radius-md)",
+                  border: theme === "ink" ? "2px solid var(--accent)" : "1px solid var(--border-default)",
+                  background: theme === "ink" ? "var(--accent-light-bg)" : "var(--bg-surface)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <span
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      background: "#FDFBF7",
+                      border: "1px solid var(--border-strong)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#1A1A1A",
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    墨
+                  </span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>纸墨</span>
+                  {theme === "ink" ? (
+                    <span className="badge badge-success" style={{ marginLeft: "auto" }}>
+                      当前
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  纸色背景 · 墨黑强调 · 衬线字体（默认）
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTheme("violet")}
+                style={{
+                  flex: "1 1 200px",
+                  textAlign: "left",
+                  padding: "14px",
+                  borderRadius: "var(--radius-md)",
+                  border: theme === "violet" ? "2px solid var(--accent)" : "1px solid var(--border-default)",
+                  background: theme === "violet" ? "var(--accent-light-bg)" : "var(--bg-surface)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <span
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      background: "#534ab7",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#ffffff",
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    墨
+                  </span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>墨韵紫</span>
+                  {theme === "violet" ? (
+                    <span className="badge badge-success" style={{ marginLeft: "auto" }}>
+                      当前
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  经典紫调界面 · 无衬线字体
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTheme("swiss")}
+                style={{
+                  flex: "1 1 200px",
+                  textAlign: "left",
+                  padding: "14px",
+                  borderRadius: "var(--radius-md)",
+                  border: theme === "swiss" ? "2px solid var(--accent)" : "1px solid var(--border-default)",
+                  background: theme === "swiss" ? "var(--accent-light-bg)" : "var(--bg-surface)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <span
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: "2px",
+                      background: "#E5231B",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#FFFFFF",
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    瑞
+                  </span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>瑞士现代</span>
+                  {theme === "swiss" ? (
+                    <span className="badge badge-success" style={{ marginLeft: "auto" }}>
+                      当前
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  中性灰底 · 正红强调 · 零圆角黑描边
+                </div>
+              </button>
+            </div>
+            <p className="form-hint" style={{ marginTop: 12 }}>
+              主题设置保存在本机浏览器，切换后立即生效。
+            </p>
+          </div>
+
           <div className="card">
             <div className="settings-section-title">基本信息</div>
             <div style={{ display: "flex", gap: "20px", alignItems: "flex-start" }}>

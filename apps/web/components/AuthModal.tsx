@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { AuthMode, CurrentUser } from "@/lib/types";
 import { apiBase, parseJson } from "@/lib/api";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 type AuthModalProps = {
   mode: AuthMode;
@@ -17,6 +18,9 @@ export function AuthModal({ mode, onClose, onSuccess, onModeChange }: AuthModalP
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // 提交中不允许 ESC 关闭，避免请求半途丢失上下文
+  useEscapeClose(onClose, !loading);
 
   async function handleSubmit() {
     setError("");

@@ -19,6 +19,7 @@ import {
   updateAdminOperationCost,
   updateAdminTier,
 } from "@/lib/api";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 type FieldType = "text" | "number" | "checkbox" | "nullable-number";
 type FieldDef = {
@@ -285,6 +286,9 @@ function ConfigFormModal({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const isEdit = Boolean(initial[idKey]);
+
+  // 保存中不允许 ESC 关闭
+  useEscapeClose(onClose, !busy);
 
   function setField(key: string, value: any) {
     setForm((prev) => ({ ...prev, [key]: value }));

@@ -7,6 +7,7 @@ import {
   fetchAdminUsers,
   setAdminUserTier,
 } from "@/lib/api";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 import type { AdminTier, AdminUser } from "@/lib/types";
 
 const PAGE_SIZE = 20;
@@ -157,6 +158,9 @@ function UserManageModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
+
+  // 提交中不允许 ESC 关闭
+  useEscapeClose(onClose, !busy);
 
   async function handleAdjust() {
     const d = parseInt(delta, 10);

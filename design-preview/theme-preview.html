@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>墨小小 · 界面风格预览</title>
+<style>
+  /* ============ 三套主题 token ============ */
+  /* 当前：墨韵紫（基线） */
+  [data-theme="current"] {
+    --bg-page: #f1efe8;
+    --bg-surface: #ffffff;
+    --bg-subtle: #f1efe8;
+    --bg-hover: #ebe9e2;
+    --text-primary: #2c2c2a;
+    --text-secondary: #888780;
+    --text-tertiary: #b4b2a9;
+    --border-default: rgba(0,0,0,0.08);
+    --border-strong: #d3d1c7;
+    --border-emphasis: #b4b2a9;
+    --accent: #534ab7;
+    --accent-hover: #463da0;
+    --accent-light-bg: #eeedfe;
+    --accent-text: #3c3489;
+    --accent-contrast: #ffffff;
+    --success: #0f6e56;
+    --warning: #854f0b;
+    --danger: #a32d2d;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --card-border-w: 0.5px;
+    --card-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    --font-sans: Inter, "Microsoft YaHei", system-ui, sans-serif;
+    --font-body: var(--font-sans);
+    --font-heading: var(--font-sans);
+    --capsule-bg: linear-gradient(135deg,#3a3280 0%,#534ab7 100%);
+    --bar-teal: #0f6e56;
+    --bar-amber: #854f0b;
+  }
+
+  /* 纸墨 E-Ink：墨水屏、专注写作、暖纸底、几乎零圆角、无阴影、正文衬线 */
+  [data-theme="eink"] {
+    --bg-page: #efece3;
+    --bg-surface: #fdfbf7;
+    --bg-subtle: #f3f0e8;
+    --bg-hover: #eae6db;
+    --text-primary: #1a1a1a;
+    --text-secondary: #565248;
+    --text-tertiary: #8a8578;
+    --border-default: #e0ddd2;
+    --border-strong: #c9c4b5;
+    --border-emphasis: #a8a394;
+    --accent: #1a1a1a;
+    --accent-hover: #000000;
+    --accent-light-bg: #efe8cf;
+    --accent-text: #1a1a1a;
+    --accent-contrast: #fdfbf7;
+    --success: #3f5f3a;
+    --warning: #6f5210;
+    --danger: #7a2e2e;
+    --radius-sm: 2px;
+    --radius-md: 2px;
+    --radius-lg: 3px;
+    --radius-xl: 4px;
+    --card-border-w: 1px;
+    --card-shadow: none;
+    --font-sans: "Microsoft YaHei", system-ui, sans-serif;
+    --font-body: Georgia, "Songti SC", "Noto Serif SC", serif;
+    --font-heading: Georgia, "Songti SC", "Noto Serif SC", serif;
+    --capsule-bg: #1a1a1a;
+    --bar-teal: #3f5f3a;
+    --bar-amber: #6f5210;
+  }
+
+  /* 瑞士现代 Swiss：理性网格、零圆角、无阴影、Helvetica/Inter、单一强调红 */
+  [data-theme="swiss"] {
+    --bg-page: #f5f5f5;
+    --bg-surface: #ffffff;
+    --bg-subtle: #ececec;
+    --bg-hover: #e6e6e6;
+    --text-primary: #000000;
+    --text-secondary: #555555;
+    --text-tertiary: #999999;
+    --border-default: #e2e2e2;
+    --border-strong: #000000;
+    --border-emphasis: #000000;
+    --accent: #e5231b;
+    --accent-hover: #c31910;
+    --accent-light-bg: #fdeceb;
+    --accent-text: #c31910;
+    --accent-contrast: #ffffff;
+    --success: #157347;
+    --warning: #9a6700;
+    --danger: #e5231b;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
+    --card-border-w: 1px;
+    --card-shadow: none;
+    --font-sans: "Helvetica Neue", Inter, Arial, "Microsoft YaHei", sans-serif;
+    --font-body: var(--font-sans);
+    --font-heading: var(--font-sans);
+    --capsule-bg: #000000;
+    --bar-teal: #157347;
+    --bar-amber: #9a6700;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #d9d7cf;
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    color: #2c2c2a;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============ 控制条 ============ */
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    background: #26262b; color: #fff;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 24px; flex-wrap: wrap;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  }
+  .toolbar-title { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  .toolbar-title span { opacity: .55; font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .theme-tabs { display: flex; gap: 8px; margin-left: auto; }
+  .theme-tab {
+    border: 1px solid rgba(255,255,255,.22); background: transparent; color: #cfcfd6;
+    padding: 7px 16px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    transition: all .15s; display: flex; align-items: center; gap: 7px;
+  }
+  .theme-tab:hover { border-color: rgba(255,255,255,.5); color: #fff; }
+  .theme-tab.active { background: #fff; color: #26262b; border-color: #fff; font-weight: 600; }
+  .theme-tab .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .canvas { padding: 28px; display: flex; justify-content: center; }
+  .device {
+    width: 1160px; max-width: 100%;
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0,0,0,.28);
+    background: var(--bg-page);
+    transition: background .3s;
+  }
+
+  .theme-caption {
+    text-align: center; color: #55534c; font-size: 13px; margin: 0 auto 18px;
+    max-width: 1160px; line-height: 1.7;
+  }
+  .theme-caption b { color: #2c2c2a; }
+
+  /* ============ 应用外壳（1:1 复刻墨写结构）============ */
+  .app { display: flex; min-height: 720px; background: var(--bg-page); font-family: var(--font-body); }
+  .app * { transition: background .3s, color .3s, border-color .3s; }
+
+  .sidebar {
+    width: 184px; background: var(--bg-surface);
+    border-right: var(--card-border-w) solid var(--border-strong);
+    display: flex; flex-direction: column; padding: 14px 10px; flex-shrink: 0;
+  }
+  .side-logo { display: flex; align-items: center; gap: 9px; margin: 4px 6px 22px; }
+  .side-logo-mark {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-contrast);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; font-family: var(--font-heading);
+  }
+  [data-theme="swiss"] .side-logo-mark { border-radius: 0; }
+  [data-theme="eink"] .side-logo-mark { border-radius: 50%; }
+  .side-logo-text { font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
+  .side-nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 11px; border-radius: var(--radius-md);
+    color: var(--text-secondary); font-size: 13.5px; cursor: pointer; position: relative;
+  }
+  .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .nav-item.active { background: var(--accent-light-bg); color: var(--accent-text); font-weight: 600; }
+  [data-theme="swiss"] .nav-item.active { background: var(--accent); color: #fff; }
+  [data-theme="swiss"] .nav-item.active::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#000;
+  }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    height: 54px; background: var(--bg-surface);
+    border-bottom: var(--card-border-w) solid var(--border-strong);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px; flex-shrink: 0;
+  }
+  .topbar-title { font-size: 15px; font-weight: 600; color: var(--text-primary); font-family: var(--font-heading); }
+  .topbar-title span { font-size: 13px; font-weight: 400; color: var(--text-secondary); margin-left: 8px; font-family: var(--font-body); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .capsule {
+    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px;
+    background: var(--capsule-bg); color: #fff; border-radius: 999px; font-size: 13px; font-weight: 500;
+  }
+  [data-theme="swiss"] .capsule, [data-theme="eink"] .capsule { border-radius: var(--radius-md); }
+  .capsule .pt { font-weight: 700; }
+  .bell {
+    width: 34px; height: 34px; border-radius: var(--radius-md);
+    border: var(--card-border-w) solid var(--border-strong); background: var(--bg-surface);
+    display: flex; align-items: center; justify-content: center; color: var(--text-secondary); position: relative;
+  }
+  .bell svg { width: 17px; height: 17px; }
+  .bell .badge {
+    position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--danger); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700;
+  }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px;
+  }
+  [data-theme="swiss"] .avatar { border-radius: 0; }
+
+  .content { padding: 26px 28px; overflow: auto; }
+
+  /* ---- 风格库页 ---- */
+  .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .sec-title { font-size: 17px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
+  .sec-title .count { font-size: 13px; font-weight: 400; color: var(--text-secondary); margin-left: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-md);
+    padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; font-family: var(--font-body);
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-contrast); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: transparent; border: var(--card-border-w) solid var(--border-emphasis); color: var(--text-primary); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); padding: 7px 12px; }
+  .btn-cost { font-weight: 700; opacity: .9; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .scard {
+    background: var(--bg-surface); border: var(--card-border-w) solid var(--border-strong);
+    border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--card-shadow);
+  }
+  .scard .bar { height: 4px; background: var(--accent); }
+  .scard .bar.teal { background: var(--bar-teal); }
+  .scard .bar.amber { background: var(--bar-amber); }
+  .scard .bd { padding: 16px 16px 14px; }
+  .scard .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .scard .nm { font-size: 15px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-light-bg); color: var(--accent-text); font-weight: 600;
+  }
+  [data-theme="swiss"] .badge { border-radius: 0; border: 1px solid var(--accent); background: transparent; }
+  .scard .ds { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6; }
+  .scard .st { font-size: 12px; color: var(--text-tertiary); margin-bottom: 14px; }
+  .scard .st strong { color: var(--text-primary); }
+  .scard .cta { font-size: 13px; color: var(--accent-text); font-weight: 600; }
+  .scard .acts { display: flex; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: var(--card-border-w) solid var(--border-default); }
+  .empty-card {
+    border: 1.5px dashed var(--border-emphasis); border-radius: var(--radius-lg);
+    padding: 30px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle);
+  }
+  .empty-card .ic { font-size: 30px; color: var(--accent); margin-bottom: 8px; }
+
+  /* ---- 写作台预览 ---- */
+  .subtabs { display: flex; gap: 6px; margin: 26px 0 16px; border-bottom: var(--card-border-w) solid var(--border-strong); }
+  .subtab { padding: 9px 4px; margin-right: 18px; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .subtab.active { color: var(--accent-text); border-bottom-color: var(--accent); font-weight: 600; }
+  [data-theme="swiss"] .subtab.active { color: #000; border-bottom-color: var(--accent); }
+  .writer {
+    background: var(--bg-surface); border: var(--card-border-w) solid var(--border-strong);
+    border-radius: var(--radius-lg); padding: 26px 30px; box-shadow: var(--card-shadow);
+  }
+  .writer h3 { font-family: var(--font-heading); font-size: 21px; color: var(--text-primary); margin-bottom: 6px; }
+  .writer .meta { font-size: 12.5px; color: var(--text-tertiary); margin-bottom: 18px; }
+  .writer p { font-family: var(--font-body); font-size: 15px; line-height: 1.95; color: var(--text-primary); margin-bottom: 14px; text-align: justify; }
+  [data-theme="eink"] .writer p { font-size: 15.5px; line-height: 2.05; }
+  .writer .toolbar-row { display: flex; gap: 8px; margin-top: 20px; padding-top: 18px; border-top: var(--card-border-w) solid var(--border-default); }
+
+  /* ---- 悬浮的消息中心弹窗 ---- */
+  .modal-demo { margin-top: 26px; }
+  .modal-demo-label { font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .modal {
+    background: var(--bg-surface); border: var(--card-border-w) solid var(--border-strong);
+    border-radius: var(--radius-xl); box-shadow: 0 20px 60px rgba(0,0,0,.16);
+    width: 620px; max-width: 100%; overflow: hidden;
+  }
+  .modal-hd { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: var(--card-border-w) solid var(--border-default); }
+  .modal-hd .t { font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: var(--font-heading); }
+  .modal-x { width: 28px; height: 28px; border-radius: var(--radius-sm); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; border: none; background: transparent; font-size: 18px; }
+  .modal-x:hover { background: var(--bg-hover); }
+  .msg-list { padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    border: var(--card-border-w) solid var(--border-default); border-radius: var(--radius-sm);
+    padding: 12px 14px; background: var(--bg-subtle);
+  }
+  .msg.unread { border-left: 3px solid var(--accent); background: var(--accent-light-bg); }
+  .msg .mh { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .msg .mt { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+  .msg .mtime { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
+  .msg .mb { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .sys-badge { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--accent-light-bg); color: var(--accent-text); font-weight: 600; }
+  [data-theme="swiss"] .sys-badge { border-radius: 0; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px; border-top: var(--card-border-w) solid var(--border-default); font-size: 12.5px; color: var(--text-secondary); }
+  .pager button { border: var(--card-border-w) solid var(--border-emphasis); background: var(--bg-surface); color: var(--text-primary); padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 980px){ .split{ grid-template-columns: 1fr; } .grid{ grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="toolbar-title">墨小小 · 界面风格预览 <span>同一套真实界面 · 实时切换主题对比</span></div>
+    <div class="theme-tabs">
+      <button class="theme-tab" data-set="current"><span class="dot" style="background:#534ab7"></span>当前（墨韵紫）</button>
+      <button class="theme-tab active" data-set="eink"><span class="dot" style="background:#1a1a1a"></span>纸墨 E-Ink</button>
+      <button class="theme-tab" data-set="swiss"><span class="dot" style="background:#e5231b"></span>瑞士现代</button>
+    </div>
+  </div>
+
+  <div class="canvas">
+    <div style="width:1160px;max-width:100%">
+      <div class="theme-caption" id="caption"></div>
+      <div class="device" id="device" data-theme="eink">
+        <div class="app">
+          <!-- 侧栏 -->
+          <aside class="sidebar">
+            <div class="side-logo">
+              <div class="side-logo-mark">墨</div>
+              <div class="side-logo-text">墨小小</div>
+            </div>
+            <nav class="side-nav">
+              <div class="nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>首页
+              </div>
+              <div class="nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v3H4z"/><path d="M6 7v13h12V7"/><path d="M10 11h4"/></svg>风格库
+              </div>
+              <div class="nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>文章库
+              </div>
+              <div class="nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3"/></svg>设置
+              </div>
+            </nav>
+          </aside>
+
+          <!-- 主区 -->
+          <div class="main">
+            <div class="topbar">
+              <div class="topbar-title">风格库 <span>管理你的写作风格档案</span></div>
+              <div class="topbar-right">
+                <div class="capsule"><span>⬥</span><span class="pt">1,280</span> 积分</div>
+                <div class="bell">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                  <span class="badge">3</span>
+                </div>
+                <div class="avatar">松</div>
+              </div>
+            </div>
+
+            <div class="content">
+              <!-- 风格库 -->
+              <div class="sec-head">
+                <div class="sec-title">我的风格 <span class="count">· 3 个</span></div>
+                <button class="btn btn-primary">+ 新建风格</button>
+              </div>
+              <div class="grid">
+                <div class="scard">
+                  <div class="bar"></div>
+                  <div class="bd">
+                    <div class="row"><span class="nm">故乡散文体</span><span class="badge">默认</span></div>
+                    <div class="ds">质朴细腻，善用食物与亲情意象，收束含蓄有余味</div>
+                    <div class="st">状态 <strong>可用</strong></div>
+                    <div class="cta">开始写作 →</div>
+                    <div class="acts"><button class="btn btn-ghost">编辑</button><button class="btn btn-ghost">设默认</button></div>
+                  </div>
+                </div>
+                <div class="scard">
+                  <div class="bar teal"></div>
+                  <div class="bd">
+                    <div class="row"><span class="nm">理性随笔体</span></div>
+                    <div class="ds">逻辑清晰，句式利落，偏思辨性表达</div>
+                    <div class="st">状态 <strong>可用</strong></div>
+                    <div class="cta">开始写作 →</div>
+                    <div class="acts"><button class="btn btn-ghost">编辑</button><button class="btn btn-ghost">设默认</button></div>
+                  </div>
+                </div>
+                <div class="scard">
+                  <div class="bar amber"></div>
+                  <div class="bd">
+                    <div class="row"><span class="nm">诗性抒情体</span></div>
+                    <div class="ds">意象密集，节奏跳跃，情感浓烈</div>
+                    <div class="st">状态 <strong>可用</strong></div>
+                    <div class="cta">开始写作 →</div>
+                    <div class="acts"><button class="btn btn-ghost">编辑</button><button class="btn btn-ghost">设默认</button></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 写作台 -->
+              <div class="subtabs">
+                <div class="subtab active">正文</div>
+                <div class="subtab">鉴评报告</div>
+                <div class="subtab">修改历史</div>
+              </div>
+              <div class="split">
+                <div class="writer">
+                  <h3>老巷口的豆腐摊</h3>
+                  <div class="meta">故乡散文体 · 高度贴近 · 812 字</div>
+                  <p>天没亮透，巷口的豆腐摊就支起来了。白汽一股股往上冒，把那盏昏黄的灯泡裹得朦朦胧胧，像蒙了一层化不开的雾。</p>
+                  <p>母亲总说，趁热吃，凉了就不是那个味了。我捧着那只豁了口的青瓷碗，热气扑在脸上，眼睛就有些发潮。</p>
+                  <div class="toolbar-row">
+                    <button class="btn btn-primary">按选定风格生成 <span class="btn-cost">· 消耗 6 积分</span></button>
+                    <button class="btn btn-secondary">段落重写</button>
+                  </div>
+                </div>
+
+                <!-- 消息中心弹窗 -->
+                <div class="modal-demo">
+                  <div class="modal-demo-label">消息中心弹窗</div>
+                  <div class="modal">
+                    <div class="modal-hd">
+                      <div class="t">消息中心</div>
+                      <button class="modal-x">✕</button>
+                    </div>
+                    <div class="msg-list">
+                      <div class="msg unread">
+                        <div class="mh"><span class="sys-badge">系统</span><span class="mt">文章鉴评已生成</span><span class="mtime">10:24</span></div>
+                        <div class="mb">你的散文《老巷口的豆腐摊》鉴评完成，总分 A 级，点击查看修改建议。</div>
+                      </div>
+                      <div class="msg">
+                        <div class="mh"><span class="sys-badge">系统</span><span class="mt">风格档案分析完成</span><span class="mtime">昨天</span></div>
+                        <div class="mb">「故乡散文体」已生成，可在风格库查看并开始写作。</div>
+                      </div>
+                    </div>
+                    <div class="pager"><button>上一页</button><span>第 1 / 3 页（共 12 条）</span><button>下一页</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const captions = {
+    current: '<b>当前 · 墨韵紫</b>：你现在线上的基线风格。紫 #534AB7 + 暖灰纸底 #F1EFE8，圆角柔和、有轻微阴影，温润但个性偏弱。',
+    eink: '<b>纸墨 E-Ink</b>：墨水屏气质，暖纸底 #FDFBF7 + 墨黑正文，正文改用<b>衬线字体</b>，几乎零圆角、<b>无阴影</b>、强调色收敛为墨黑（点缀高亮黄）。最安静、最适合长时间中文阅读与写作，与你现有暖灰同源、切换无割裂感。',
+    swiss: '<b>瑞士现代 Swiss</b>：理性网格、<b>纯零圆角</b>、黑色描边、Helvetica/Inter 字体，单一强调色改为<b>正红 #E5231B</b>。专业克制、信息密度高，像专业工具/文档站，但情感温度低、偏冷硬。'
+  };
+  const device = document.getElementById('device');
+  const caption = document.getElementById('caption');
+  const tabs = document.querySelectorAll('.theme-tab');
+  function setTheme(name){
+    device.setAttribute('data-theme', name);
+    caption.innerHTML = captions[name];
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.set === name));
+  }
+  tabs.forEach(t => t.addEventListener('click', () => setTheme(t.dataset.set)));
+  setTheme('eink');
+</script>
+</body>
+</html>

@@ -46,3 +46,8 @@ styles_response.json
 login_response.json
 register_response.json
 test_download*.docx
+
+# Local debugging artifacts (pytest / dump outputs / db backups)
+apps/api/.pytest_*.txt
+apps/api/results_all.txt
+apps/api/*.db.bak_*

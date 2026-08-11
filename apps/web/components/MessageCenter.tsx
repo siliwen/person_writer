@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchMyMessages, markAllMessagesRead, markMessageRead } from "@/lib/api";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 import type { MessageInboxItem } from "@/lib/types";
 
 type Props = {
@@ -18,6 +19,8 @@ export function MessageCenter({ onClose, onUnreadChange }: Props) {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEscapeClose(onClose);
 
   async function load(targetPage?: number) {
     setLoading(true);
@@ -74,9 +77,15 @@ export function MessageCenter({ onClose, onUnreadChange }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="message-center-title"
+      onClick={onClose}
+    >
       <div className="modal-card messages-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">
+        <div className="modal-title" id="message-center-title">
           消息中心
           <button type="button" className="modal-close" onClick={onClose} aria-label="关闭">
             ×

@@ -1,10 +1,87 @@
 ﻿:root {
   color-scheme: light;
 
+  /* ===== 纸墨（默认主题）色板 ===== */
+  --bg-page: #FDFBF7;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F4F0E8;
+  --bg-hover: #EFEAE0;
+  --bg-elevated: #F7F3EB;
+
+  --text-primary: #1A1A1A;
+  --text-secondary: #5C5852;
+  --text-tertiary: #8A857C;
+
+  --border-default: rgba(26, 26, 26, 0.10);
+  --border-strong: #D8D2C4;
+  --border-emphasis: #B8B2A4;
+
+  --accent: #1A1A1A;
+  --accent-hover: #000000;
+  --accent-deep: #000000;
+  --accent-light-bg: #F0EBE0;
+  --accent-text: #1A1A1A;
+  --accent-contrast: #FFFFFF;
+  --accent-contrast-muted: #FFD0D0;
+
+  --highlight: #FFE94A;
+  --highlight-ring: rgba(255, 233, 74, 0.45);
+
+  /* 状态色（两套主题一致） */
+  --success: #2E8B57;
+  --success-light: #E6F4EC;
+  --success-strong: #2E8B57;
+  --warning: #B8860B;
+  --warning-light: #FBF3E2;
+  --warning-strong: #B8860B;
+  --danger: #C0392B;
+  --danger-light: #FBEAEA;
+  --danger-strong: #C0392B;
+
+  /* 强调色淡底/描边（随主题切换） */
+  --accent-bg-soft: rgba(26, 26, 26, 0.05);
+  --accent-bg-soft2: rgba(26, 26, 26, 0.08);
+  --accent-bg-soft3: rgba(26, 26, 26, 0.10);
+  --accent-border-soft: rgba(26, 26, 26, 0.18);
+
+  /* 状态色淡底/描边（两套主题一致） */
+  --danger-bg-soft: rgba(220, 60, 60, 0.08);
+  --warning-bg-soft: rgba(214, 158, 46, 0.06);
+  --warning-bg-soft2: rgba(214, 158, 46, 0.16);
+  --warning-border: rgba(214, 158, 46, 0.6);
+  --success-bg-soft: rgba(46, 139, 87, 0.14);
+
+  /* 遮罩与白色叠加（两套主题一致） */
+  --overlay: rgba(44, 44, 42, 0.38);
+  --overlay-strong: rgba(44, 44, 42, 0.45);
+  --on-accent-soft: rgba(255, 255, 255, 0.22);
+
+  /* 几何与圆角（纸墨：扁平 2px） */
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-pill: 999px;
+
+  --sidebar-w: 56px;
+  --topbar-h: 52px;
+
+  /* 阴影（纸墨：无阴影，靠描边区分层级） */
+  --shadow-card: none;
+  --shadow-modal: none;
+  --shadow-pop: none;
+
+  --font-sans: Georgia, "Times New Roman", "Songti SC", "STSong", "SimSun",
+    "Noto Serif SC", serif;
+}
+
+/* ===== 墨韵紫（备选主题，经典紫调） ===== */
+[data-theme="violet"] {
   --bg-page: #f1efe8;
   --bg-surface: #ffffff;
   --bg-subtle: #f1efe8;
   --bg-hover: #ebe9e2;
+  --bg-elevated: #faf9ff;
 
   --text-primary: #2c2c2a;
   --text-secondary: #888780;
@@ -16,27 +93,101 @@
 
   --accent: #534ab7;
   --accent-hover: #463da0;
-  --accent-light: #eededfe;
-  --accent-light-bg: #eeedfe;
+  --accent-deep: #3a3280;
+  --accent-light-bg: #faf9ff;
   --accent-text: #3c3489;
+  --accent-contrast: #ffffff;
+  --accent-contrast-muted: #ffd0d0;
+
+  --highlight: #FFE94A;
+  --highlight-ring: rgba(255, 233, 74, 0.45);
 
   --success: #0f6e56;
   --success-light: #e1f5ee;
+  --success-strong: #2E8B57;
   --warning: #854f0b;
   --warning-light: #faeeda;
+  --warning-strong: #B8860B;
   --danger: #a32d2d;
   --danger-light: #fcebeb;
+  --danger-strong: #C0392B;
+
+  --accent-bg-soft: rgba(83, 74, 183, 0.05);
+  --accent-bg-soft2: rgba(83, 74, 183, 0.1);
+  --accent-bg-soft3: rgba(83, 74, 183, 0.12);
+  --accent-border-soft: rgba(83, 74, 183, 0.25);
 
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 12px;
   --radius-xl: 16px;
 
-  --sidebar-w: 56px;
-  --topbar-h: 52px;
+  --shadow-card: 0 4px 16px rgba(44, 44, 42, 0.06);
+  --shadow-modal: 0 24px 80px rgba(44, 44, 42, 0.18);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.18);
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* ===== 瑞士现代（备选主题，中性灰 + 正红 + 黑描边 + 零圆角） ===== */
+[data-theme="swiss"] {
+  --bg-page: #F5F5F5;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #EEEEEE;
+  --bg-hover: #E8E8E8;
+  --bg-elevated: #FAFAFA;
+
+  --text-primary: #111111;
+  --text-secondary: #555555;
+  --text-tertiary: #888888;
+
+  --border-default: rgba(0, 0, 0, 0.12);
+  --border-strong: #CCCCCC;
+  --border-emphasis: #111111;
+
+  --accent: #E5231B;
+  --accent-hover: #C01810;
+  --accent-deep: #B0150D;
+  --accent-light-bg: #FBECEB;
+  --accent-text: #C01810;
+  --accent-contrast: #FFFFFF;
+  --accent-contrast-muted: #FFE0DE;
+
+  --highlight: #E5231B;
+  --highlight-ring: rgba(229, 35, 27, 0.40);
+
+  --success: #1F7A4D;
+  --success-light: #E6F4EC;
+  --success-strong: #2E8B57;
+  --warning: #9A6B00;
+  --warning-light: #F7EEDA;
+  --warning-strong: #B8860B;
+  --danger: #C01810;
+  --danger-light: #FBECEB;
+  --danger-strong: #C0392B;
+
+  --accent-bg-soft: rgba(229, 35, 27, 0.05);
+  --accent-bg-soft2: rgba(229, 35, 27, 0.10);
+  --accent-bg-soft3: rgba(229, 35, 27, 0.12);
+  --accent-border-soft: rgba(229, 35, 27, 0.30);
+
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-pill: 0;
+
+  --shadow-card: none;
+  --shadow-modal: none;
+  --shadow-pop: none;
+
+  --font-sans: "Helvetica Neue", Helvetica, Inter, Arial, "Microsoft YaHei", sans-serif;
+}
+
+/* 纸墨专属点缀：升级横幅左侧高亮黄描边 */
+[data-theme="ink"] .upgrade-banner {
+  border-left: 3px solid var(--highlight);
 }
 
 * {
@@ -118,7 +269,7 @@ a {
   height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -241,7 +392,7 @@ a {
   height: 22px;
   border-radius: 50%;
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -312,8 +463,8 @@ a {
   gap: 8px;
   height: 32px;
   padding: 0 12px;
-  background: linear-gradient(135deg, #3a3280 0%, #534ab7 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 100%);
+  color: var(--accent-contrast);
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
@@ -345,7 +496,7 @@ a {
 }
 
 .topbar-capsule-points.zero {
-  color: #ffd0d0;
+  color: var(--accent-contrast-muted);
 }
 
 .topbar-capsule-unit {
@@ -356,7 +507,7 @@ a {
 .topbar-capsule-divider {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--on-accent-soft);
 }
 
 .topbar-capsule-tier {
@@ -395,7 +546,7 @@ a {
   padding: 0 3px;
   border-radius: 7px;
   background: var(--danger);
-  color: #ffffff;
+  color: var(--accent-contrast);
   font-size: 10px;
   font-weight: 600;
   line-height: 14px;
@@ -465,7 +616,7 @@ a {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-pop);
 }
 
 .topbar-dropdown-item {
@@ -525,7 +676,7 @@ a {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .btn-primary:hover {
@@ -590,7 +741,7 @@ a {
 
 .card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 20px;
 }
@@ -651,7 +802,7 @@ a {
 
 .quick-card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 20px;
   cursor: pointer;
@@ -661,7 +812,7 @@ a {
 
 .quick-card:hover {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .quick-card-icon {
@@ -915,7 +1066,7 @@ a {
 
 .upload-area:hover {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .upload-area.has-files {
@@ -994,7 +1145,7 @@ a {
   height: 22px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 11px;
   font-weight: 500;
   display: flex;
@@ -1206,7 +1357,7 @@ a {
 
 .style-card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   overflow: hidden;
   transition: border-color 0.15s;
@@ -1288,7 +1439,7 @@ a {
 
 .style-card-new:hover {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .style-card-new-icon {
@@ -1352,7 +1503,7 @@ a {
 
 .document-display {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 24px;
 }
@@ -1439,7 +1590,7 @@ a {
   right: 12px;
   top: 12px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   border-radius: var(--radius-sm);
   padding: 4px 10px;
   font-size: 11px;
@@ -1457,7 +1608,7 @@ a {
 .settings-tabs {
   display: inline-flex;
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 3px;
   gap: 2px;
@@ -1571,7 +1722,7 @@ a {
   height: 36px;
   border-radius: var(--radius-md);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1600,7 +1751,7 @@ a {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(44, 44, 42, 0.38);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1610,9 +1761,9 @@ a {
 
 .modal-card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 80px rgba(44, 44, 42, 0.18);
+  box-shadow: var(--shadow-modal);
   padding: 24px;
   width: 100%;
   max-width: 460px;
@@ -1797,7 +1948,7 @@ a {
   gap: 6px;
   padding: 6px 12px;
   background: var(--bg-subtle);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   font-size: 13px;
   color: var(--text-primary);
@@ -1874,12 +2025,12 @@ a {
   border-radius: var(--radius-xl);
   overflow: hidden;
   background: var(--bg-surface);
-  box-shadow: 0 24px 80px rgba(44, 44, 42, 0.18);
+  box-shadow: var(--shadow-modal);
 }
 
 .auth-brand {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   padding: 40px 32px;
   display: flex;
   flex-direction: column;
@@ -1891,7 +2042,7 @@ a {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--on-accent-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1947,7 +2098,7 @@ a {
   background: var(--bg-surface);
   color: var(--accent);
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-pop);
 }
 
 /* ===== Rewrite dialog ===== */
@@ -2022,7 +2173,7 @@ a {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(44, 44, 42, 0.45);
+  background: var(--overlay-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2034,7 +2185,7 @@ a {
 .modal-dialog.new-style-modal {
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 80px rgba(44, 44, 42, 0.22);
+  box-shadow: var(--shadow-modal);
   width: 100%;
   max-width: 640px;
   max-height: calc(100vh - 48px);
@@ -2122,13 +2273,13 @@ a {
 .modal-step.active .modal-step-num {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .modal-step.done .modal-step-num {
   border-color: var(--success);
   background: var(--success);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .modal-step-label {
@@ -2173,7 +2324,7 @@ a {
 .upload-dropzone:hover,
 .upload-dropzone.drag-over {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .upload-dropzone-icon {
@@ -2257,7 +2408,7 @@ a {
   height: 56px;
   border-radius: 50%;
   background: var(--success);
-  color: #fff;
+  color: var(--accent-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2329,7 +2480,7 @@ a {
 }
 
 .style-card-main:hover {
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .style-card-cta {
@@ -2362,7 +2513,7 @@ a {
 
 .style-card-add:hover {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .style-card-add-icon {
@@ -2390,7 +2541,7 @@ a {
 
 .empty-style-card:hover {
   border-color: var(--accent);
-  background: #faf9ff;
+  background: var(--accent-light-bg);
 }
 
 .empty-style-card-icon {
@@ -2421,7 +2572,7 @@ a {
 
 .recommended-card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 16px 12px;
   text-align: center;
@@ -2442,7 +2593,7 @@ a {
   justify-content: center;
   font-size: 16px;
   font-weight: 500;
-  color: #fff;
+  color: var(--accent-contrast);
   margin: 0 auto 10px;
 }
 
@@ -2558,7 +2709,7 @@ a {
 
 .article-card {
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 20px;
   display: flex;
@@ -2568,7 +2719,7 @@ a {
 
 .article-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 4px 16px rgba(44, 44, 42, 0.06);
+  box-shadow: var(--shadow-card);
 }
 
 .article-card-header {
@@ -2640,7 +2791,7 @@ a {
   align-items: stretch;
   gap: 24px;
   background: var(--bg-subtle);
-  border: 0.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   margin-top: 16px;
@@ -2686,7 +2837,7 @@ a {
 }
 
 .bracket-table {
-  border: 0.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
@@ -2717,7 +2868,7 @@ a {
 }
 
 .usage-history {
-  border: 0.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
@@ -2750,35 +2901,6 @@ a {
 
 .usage-gain {
   color: var(--success);
-  font-weight: 500;
-}
-
-.quota-hint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.quota-hint strong {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.quota-hint-badge {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--accent-text);
-  background: var(--accent-light-bg);
-  padding: 2px 10px;
-  border-radius: 999px;
-}
-
-.quota-hint-warn {
-  color: var(--warning);
   font-weight: 500;
 }
 
@@ -3228,9 +3350,9 @@ a {
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 80px rgba(44, 44, 42, 0.18);
+  box-shadow: var(--shadow-modal);
   padding: 24px;
 }
 
@@ -3285,8 +3407,8 @@ a {
   gap: 12px;
 }
 .admin-error {
-  background: rgba(220, 60, 60, 0.08);
-  color: #c0392b;
+  background: var(--danger-bg-soft);
+  color: var(--danger-strong);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   margin-bottom: 12px;
@@ -3335,8 +3457,8 @@ a {
   color: var(--text-secondary);
 }
 .admin-seg.active {
-  background: var(--purple, #534ab7);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 .admin-chip-row {
   display: flex;
@@ -3356,8 +3478,8 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(83, 74, 183, 0.1);
-  color: var(--purple, #534ab7);
+  background: var(--accent-bg-soft2);
+  color: var(--accent);
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 12px;
@@ -3412,8 +3534,8 @@ a {
   background: var(--bg-elevated);
 }
 .admin-msg-row.important {
-  border-color: rgba(214, 158, 46, 0.6);
-  background: rgba(214, 158, 46, 0.06);
+  border-color: var(--warning-border);
+  background: var(--warning-bg-soft);
 }
 .admin-msg-title {
   font-weight: 600;
@@ -3432,16 +3554,16 @@ a {
   font-size: 11px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: rgba(83, 74, 183, 0.12);
-  color: var(--purple, #534ab7);
+  background: var(--accent-bg-soft3);
+  color: var(--accent);
 }
 .style-card-badge.important {
-  background: rgba(214, 158, 46, 0.16);
-  color: #b8860b;
+  background: var(--warning-bg-soft2);
+  color: var(--warning-strong);
 }
 .style-card-badge.recommended {
-  background: rgba(46, 139, 87, 0.14);
-  color: #2e8b57;
+  background: var(--success-bg-soft);
+  color: var(--success-strong);
 }
 .admin-tpl-box {
   border-top: 1px solid var(--border-default);
@@ -3464,7 +3586,7 @@ a {
 .admin-tpl-apply {
   border: none;
   background: transparent;
-  color: var(--purple, #534ab7);
+  color: var(--accent);
   cursor: pointer;
   font-size: 13px;
   text-align: left;
@@ -3491,9 +3613,9 @@ a {
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
-  border: 0.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 80px rgba(44, 44, 42, 0.18);
+  box-shadow: var(--shadow-modal);
   padding: 20px;
 }
 .modal-title {
@@ -3549,11 +3671,11 @@ a {
   cursor: pointer;
 }
 .message-item.unread {
-  background: rgba(83, 74, 183, 0.05);
-  border-color: rgba(83, 74, 183, 0.25);
+  background: var(--accent-bg-soft);
+  border-color: var(--accent-border-soft);
 }
 .message-item.important {
-  border-color: rgba(214, 158, 46, 0.6);
+  border-color: var(--warning-border);
 }
 .message-item-head {
   display: flex;
@@ -3580,7 +3702,7 @@ a {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--purple, #534ab7);
+  background: var(--accent);
   flex: none;
 }
 
@@ -3726,7 +3848,7 @@ a {
 }
 .eval-bar-good { background: var(--success); }
 .eval-bar-ok { background: var(--accent); }
-.eval-bar-warn { background: #c98a2b; }
+.eval-bar-warn { background: var(--warning); }
 .eval-bar-bad { background: var(--danger); }
 .eval-dim-comment {
   margin: 7px 0 0;
@@ -3849,4 +3971,75 @@ a {
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--text-tertiary);
+}
+
+/* ==========================================================================
+   Accessibility — 键盘焦点可见性 & 减弱动效
+   说明：多处组件为了视觉整洁移除了默认 outline，这里用 :focus-visible 统一
+   补回键盘焦点环。:focus-visible 只在键盘导航时触发，鼠标点击不会出现，
+   因此不影响原有视觉。
+   ========================================================================== */
+
+/* 全局兜底：任何可聚焦元素在键盘导航时都有可见焦点环 */
+:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 表单控件：outline 会被圆角裁切得不好看，改用 ring 阴影 + 强调边框 */
+.form-input:focus-visible,
+.form-select:focus-visible,
+.form-textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--highlight-ring);
+}
+
+/* 鼠标点击输入框时也给一个轻边框反馈（不带 ring） */
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--accent);
+}
+
+/* 段落重写编辑区 */
+.rewrite-edit-area:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--highlight-ring);
+}
+
+/* 风格卡片（可点击整卡） */
+.style-card-main:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: -2px;
+  background: var(--accent-light-bg);
+}
+
+/* 空态卡片（点击新建） */
+.empty-style-card:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+  border-color: var(--accent);
+  background: var(--accent-light-bg);
+}
+
+/* 弹窗关闭按钮等图标按钮 */
+.modal-close:focus-visible,
+.icon-button:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+/* 尊重系统「减弱动效」偏好：关闭所有过渡与动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

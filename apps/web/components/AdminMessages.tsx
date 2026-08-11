@@ -13,6 +13,7 @@ import {
   recallAdminMessage,
   updateAdminTemplate,
 } from "@/lib/api";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 import type { AdminMessage, AdminTier, AdminUser, MessageTemplate } from "@/lib/types";
 
 type ScopeType = "all" | "tier" | "specific";
@@ -41,6 +42,9 @@ export function AdminMessages() {
 
   // 发送确认弹窗
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // 发送确认弹窗：ESC 关闭
+  useEscapeClose(() => setConfirmOpen(false), confirmOpen);
 
   // 模板编辑
   const [tplOpen, setTplOpen] = useState(false);

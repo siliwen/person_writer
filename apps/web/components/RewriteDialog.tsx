@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DocumentParagraph } from "@/lib/types";
+import { useEscapeClose } from "@/lib/useEscapeClose";
 
 type RewriteDialogProps = {
   paragraph: DocumentParagraph;
@@ -20,6 +21,9 @@ export function RewriteDialog({ paragraph, busy, paragraphRewritePoints = null, 
   const [error, setError] = useState("");
   const [isAiResult, setIsAiResult] = useState(false);
   const [isOverwriting, setIsOverwriting] = useState(false);
+
+  // AI 重写或覆盖写入进行中时禁用 ESC，防止误关丢失结果
+  useEscapeClose(onClose, !busy && !isOverwriting);
 
   const hasModified = editText.trim() !== originalContent.trim();
   const canOverwrite = hasModified && !busy && !isOverwriting;

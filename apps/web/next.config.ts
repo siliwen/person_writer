@@ -2,7 +2,8 @@
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  allowedDevOrigins: ["127.0.0.1", "localhost"]
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
+  devIndicators: false
 };
 
 export default nextConfig;

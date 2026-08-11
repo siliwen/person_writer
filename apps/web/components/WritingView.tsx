@@ -208,22 +208,6 @@ export function WritingView({
             )}
           </button>
 
-          {quota ? (
-            <div className="quota-hint">
-              <span className="quota-hint-badge">当前等级：{quota.tier.name}</span>
-              <span>剩余积分 <strong>{quota.points_balance}</strong> / {quota.tier.monthly_points}</span>
-              {estimate ? (
-                <span>
-                  · 本次预估消耗 <strong>{estimate.points}</strong> 积分
-                  {estimate.overLength ? (
-                    <span className="quota-hint-warn">（超过单篇 {quota.tier.max_article_length} 字上限）</span>
-                  ) : estimate.insufficient ? (
-                    <span className="quota-hint-warn">（积分不足）</span>
-                  ) : null}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
           {estimate?.blocked ? (
             <p className="inline-error" role="alert">
               {estimate.overLength

@@ -36,7 +36,7 @@ export function DashboardView({
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <h1 className="dashboard-title">墨写 · 个人风格写作工作台</h1>
+          <h1 className="dashboard-title">墨小小 · 个人风格写作工作台</h1>
           <p className="dashboard-subtitle">登录后即可查看你的写作概览、风格档案与已生成文章。</p>
         </header>
         <div className="empty-state">

@@ -99,7 +99,7 @@ export function Sidebar({ currentView, onNavigate, isAdmin }: SidebarProps) {
     <nav className={`sidebar${hydrated && expanded ? " expanded" : ""}`}>
       <div className="sidebar-logo">
         <span className="sidebar-logo-mark">墨</span>
-        <span className="sidebar-logo-text">墨写</span>
+        <span className="sidebar-logo-text">墨小小</span>
       </div>
 
       <div className="sidebar-nav">
