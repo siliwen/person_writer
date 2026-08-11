@@ -13,7 +13,8 @@
 set -euo pipefail
 
 # ----------------------------- 可配置变量 -----------------------------------
-GIT_REPO="${GIT_REPO:?请先 export GIT_REPO=你的git地址}"
+# GIT_REPO 可选：填了就 clone；不填则假定代码已上传到 DEPLOY_DIR（如用 git archive 包）
+GIT_REPO="${GIT_REPO:-}"
 DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-moxx.cn}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@${DEPLOY_DOMAIN}}"
 DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-}"
@@ -44,14 +45,24 @@ if ! command -v certbot >/dev/null 2>&1; then
     sudo pip3 install --break-system-packages certbot certbot-nginx
 fi
 
-# ----------------------------- 2. 拉取代码 ----------------------------------
-echo "==> [2/9] 克隆代码到 ${DEPLOY_DIR}"
-if [ -d "${DEPLOY_DIR}/.git" ]; then
-  sudo -u "$(logname 2>/dev/null || echo root)" git -C "${DEPLOY_DIR}" pull --ff-only || true
+# ----------------------------- 2. 准备代码 ----------------------------------
+# 两种方式：① 填了 GIT_REPO 则 clone；② 不填则假定代码已上传到 DEPLOY_DIR
+echo "==> [2/9] 准备代码 (DEPLOY_DIR=${DEPLOY_DIR})"
+sudo mkdir -p "${DEPLOY_DIR}"
+if [ -n "${GIT_REPO}" ]; then
+  if [ -d "${DEPLOY_DIR}/.git" ]; then
+    sudo -u "$(logname 2>/dev/null || echo root)" git -C "${DEPLOY_DIR}" pull --ff-only || true
+  else
+    sudo chown -R "$(logname 2>/dev/null || echo root):" "${DEPLOY_DIR}"
+    git clone "${GIT_REPO}" "${DEPLOY_DIR}"
+  fi
 else
-  sudo mkdir -p "${DEPLOY_DIR}"
-  sudo chown -R "$(logname 2>/dev/null || echo root):" "${DEPLOY_DIR}"
-  git clone "${GIT_REPO}" "${DEPLOY_DIR}"
+  if [ ! -d "${DEPLOY_DIR}/apps/web" ]; then
+    echo "!! 未设置 GIT_REPO，且 ${DEPLOY_DIR}/apps/web 不存在。"
+    echo "   请先上传代码包： sudo tar -xzf moxx-deploy.tar.gz -C ${DEPLOY_DIR}"
+    exit 1
+  fi
+  echo "   使用已上传到 ${DEPLOY_DIR} 的代码"
 fi
 
 # 切换到部署用户（非 root 运行服务更安全）

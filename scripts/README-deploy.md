@@ -9,28 +9,39 @@
 
 ## 步骤
 
-### A. 上传脚本
-在 Workbench 终端里，把本目录的两个文件上传到 ECS 任意目录（如 `/root/`）：
-- `ec2-deploy.sh`
+> 两种代码来源（二选一）：
+> - **方式一（推荐，最简单）**：用 `moxx-deploy.tar.gz` 上传包，不依赖 GitHub；
+> - **方式二**：`export GIT_REPO=...` 让脚本自动 clone（需 GitHub 可访问）。
+> 下面以**方式一**为主。
+
+### A. 上传文件到 ECS
+在 Workbench 文件管理器里，把以下文件上传到 ECS（如 `/root/`）：
+- `moxx-deploy.tar.gz` （代码包，已排除 node_modules/.venv/.next/*.db/.env.local）
+- `ec2-deploy.sh` （一键部署脚本）
 - （`env.local.example` 仅供参考，脚本会自动生成真实配置）
 
-> 也可用 `scp ec2-deploy.sh root@<ECS公网IP>:/root/` 从本地推。
+> 也可用 scp 从本地推：
+> `scp moxx-deploy.tar.gz ec2-deploy.sh root@<ECS公网IP>:/root/`
 
-### B. 在 ECS 上执行一键部署
+### B. 在 ECS 上解压代码 + 执行部署
 ```bash
-# 1) 给脚本加执行权限
+# 1) 解压代码到 /opt/moxx（脚本会从这个目录构建）
+sudo mkdir -p /opt/moxx
+sudo tar -xzf /root/moxx-deploy.tar.gz -C /opt/moxx
+
+# 2) 给脚本加执行权限
 chmod +x /root/ec2-deploy.sh
 
-# 2) 设置必要环境变量（私钥不要进 git/聊天记录，建议直接在这里填）
-export GIT_REPO="https://你的git地址/moxx.git"
+# 3) 设置环境变量（key 直接在这里填，不进聊天记录）
 export DASHSCOPE_API_KEY="sk-你的通义key"
 export DEPLOY_DOMAIN="moxx.cn"
 export CERTBOT_EMAIL="you@example.com"
+# 注意：方式一不要设置 GIT_REPO，脚本会检测到代码已存在而跳过 clone
 
-# 3) 运行（约 3–8 分钟，取决于机器性能）
+# 4) 运行（约 3–8 分钟，取决于机器性能）
 sudo bash /root/ec2-deploy.sh
 ```
-脚本会自动完成：装依赖 → 拉代码 → 建虚拟环境装包 → 构建前端 → 注册 systemd 服务 → 配 Nginx + HTTPS → 开防火墙。
+脚本会自动完成：装依赖 → 建虚拟环境装包 → 构建前端 → 注册 systemd 服务 → 配 Nginx + HTTPS → 开防火墙。
 
 ### C. 验证
 - 浏览器打开 `https://moxx.cn`，应看到纸墨主题首页
