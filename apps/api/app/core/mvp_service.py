@@ -176,17 +176,34 @@ def confirm_style_profile(
     )
     job.status = "confirmed"
     db.add(style)
+    # 风格生成完成后推送系统通知（融合进消息中心）
+    from app.core import message_service as _ms
+
+    _ms._add_system_message(
+        db,
+        user_id,
+        title="风格生成完成",
+        body=f"您上传的作品已分析完成，风格「{normalized_name}」已生成，现在可以开始用该风格写作了。",
+        category="system",
+    )
     db.commit()
     db.refresh(style)
     return style
 
 
-def list_style_profiles(db: Session, *, user_id: str) -> list[models.StyleProfile]:
+def list_style_profiles(db: Session, *, user_id: str | None) -> list[models.StyleProfile]:
+    conditions = [models.StyleProfile.status == "active"]
+    if user_id is not None:
+        conditions.append(
+            (models.StyleProfile.user_id == user_id) | (models.StyleProfile.is_recommended == True)
+        )
+    else:
+        conditions.append(models.StyleProfile.is_recommended == True)
     return list(
         db.scalars(
             select(models.StyleProfile)
-            .where(models.StyleProfile.user_id == user_id, models.StyleProfile.status == "active")
-            .order_by(models.StyleProfile.created_at.desc())
+            .where(*conditions)
+            .order_by(models.StyleProfile.is_recommended.desc(), models.StyleProfile.created_at.desc())
         )
     )
 
@@ -220,6 +237,8 @@ def update_style_profile(
     style_profile_id: str,
     name: str,
     profile: dict[str, Any] | None,
+    is_recommended: bool | None = None,
+    is_admin: bool = False,
 ) -> models.StyleProfile:
     style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
     normalized_name = name.strip()
@@ -240,6 +259,10 @@ def update_style_profile(
         style.profile = profile
         if isinstance(profile, dict):
             profile["style_name"] = normalized_name
+    if is_recommended is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="只有管理员可以设置推荐风格")
+        style.is_recommended = is_recommended
     style.updated_at = models.utc_now()
     db.commit()
     db.refresh(style)
@@ -324,6 +347,18 @@ def create_writing(
         effective_mode=prompt.mode.value,
         rag_enabled=prompt.rag_enabled,
         prompt_version=prompt.prompt_version,
+        requirements={
+            "genre": task_input.genre,
+            "task_type": task_input.task_type,
+            "title": task_input.title,
+            "brief": task_input.brief,
+            "target_length": task_input.target_length,
+            "target_reader": task_input.target_reader,
+            "must_include": task_input.must_include,
+            "must_avoid": task_input.must_avoid,
+            "eval_focus": task_input.eval_focus,
+            "style_intensity": task_input.style_intensity,
+        },
         model_provider=model_result.model_provider,
         model_name=model_result.model_name,
         input_token_count=model_result.input_token_count,
@@ -352,8 +387,11 @@ def preview_rewrite_paragraph(
     document_id: str,
     paragraph_id: str,
     instruction: str,
-) -> str:
-    """Call AI to rewrite a paragraph and return the result WITHOUT saving to DB."""
+) -> dict[str, Any]:
+    """Call AI to rewrite a paragraph and return the result WITHOUT saving to DB.
+
+    Returns a dict with the rewritten content plus token counts for cost accounting.
+    """
     document = db.scalar(
         select(models.Document)
         .where(models.Document.id == document_id, models.Document.user_id == user_id)
@@ -389,7 +427,12 @@ def preview_rewrite_paragraph(
         )
     )
     db.commit()
-    return model_result.content.strip()
+    return {
+        "content": model_result.content.strip(),
+        "input_token_count": model_result.input_token_count,
+        "output_token_count": model_result.output_token_count,
+        "model_name": model_result.model_name,
+    }
 
 
 def update_paragraph_content(

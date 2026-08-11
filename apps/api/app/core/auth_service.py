@@ -94,7 +94,9 @@ def register_user(db: Session, *, username: str, password: str, confirm_password
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    from app.core.points_service import assign_default_tier
+
+    return assign_default_tier(db, user)
 
 
 def authenticate_user(db: Session, *, username: str, password: str) -> models.User:

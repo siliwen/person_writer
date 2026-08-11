@@ -1,14 +1,17 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import type { BusyAction, StyleProfile, WritingDocument } from "@/lib/types";
-import { GENRES } from "@/lib/types";
+import type { ArticleEvaluation, BusyAction, QuotaView, StyleProfile, WritingDocument } from "@/lib/types";
+import { EVALUATION_GENRES, GENRES } from "@/lib/types";
+import { estimateArticlePoints, parseTargetLengthChars } from "@/lib/quota";
 import { useAuth } from "@/lib/auth-context";
 import { DocumentReader } from "./DocumentReader";
+import { EvaluationPanel } from "./EvaluationPanel";
 
 type WritingViewProps = {
   styles: StyleProfile[];
   selectedStyleId: string;
+  quota: QuotaView | null;
   onSelectStyle: (id: string) => void;
   document: WritingDocument | null;
   generationCount: number;
@@ -19,6 +22,10 @@ type WritingViewProps = {
   onOverwriteParagraph: (paragraphId: string, newContent: string) => Promise<void>;
   onSaveDocument: () => Promise<void>;
   onDownloadDocument: () => Promise<void>;
+  evaluation: ArticleEvaluation | null;
+  evaluationLoading: boolean;
+  evaluationError: string;
+  onEvaluate: () => void;
 };
 
 export type WritingParams = {
@@ -41,6 +48,7 @@ const styleIntensityOptions = [
 export function WritingView({
   styles,
   selectedStyleId,
+  quota,
   onSelectStyle,
   document: doc,
   generationCount,
@@ -51,6 +59,10 @@ export function WritingView({
   onOverwriteParagraph,
   onSaveDocument,
   onDownloadDocument,
+  evaluation,
+  evaluationLoading,
+  evaluationError,
+  onEvaluate,
 }: WritingViewProps) {
   const { requireAuth } = useAuth();
   const [writingGenre, setWritingGenre] = useState("散文");
@@ -70,9 +82,25 @@ export function WritingView({
     [styles, selectedStyleId]
   );
 
+  // 根据当前 targetLength 与等级档位预估本次生成消耗积分
+  const estimate = useMemo(() => {
+    if (!quota) return null;
+    const chars = parseTargetLengthChars(targetLength);
+    const tier = quota.tier;
+    const points = estimateArticlePoints(chars, quota.article_length_brackets);
+    const overLength =
+      tier.max_article_length > 0 && chars > tier.max_article_length;
+    const insufficient = quota.points_balance < points;
+    return { chars, points, overLength, insufficient, blocked: overLength || insufficient };
+  }, [quota, targetLength]);
+
+  const canDownload = quota ? quota.tier.can_download : true;
+  const canRewrite = quota ? quota.tier.can_rewrite : true;
+
   function handleGenerate() {
     if (!requireAuth()) return;
     if (!selectedStyleId) return;
+    if (estimate?.blocked) return; // 由下方按钮 disabled 与提示兜底，这里再保险一次
     onGenerate({
       styleProfileId: selectedStyleId,
       genre: writingGenre,
@@ -172,11 +200,37 @@ export function WritingView({
           <button
             className="btn btn-primary"
             type="button"
-            disabled={busy || !selectedStyleId}
+            disabled={busy || !selectedStyleId || !!estimate?.blocked}
             onClick={handleGenerate}
           >
-            {isWriting ? "正在生成文章……" : "按选定风格生成文章"}
+            {isWriting ? "正在生成文章……" : (
+              <>按选定风格生成文章{estimate ? <span className="btn-cost"> · 消耗{estimate.points}积分</span> : null}</>
+            )}
           </button>
+
+          {quota ? (
+            <div className="quota-hint">
+              <span className="quota-hint-badge">当前等级：{quota.tier.name}</span>
+              <span>剩余积分 <strong>{quota.points_balance}</strong> / {quota.tier.monthly_points}</span>
+              {estimate ? (
+                <span>
+                  · 本次预估消耗 <strong>{estimate.points}</strong> 积分
+                  {estimate.overLength ? (
+                    <span className="quota-hint-warn">（超过单篇 {quota.tier.max_article_length} 字上限）</span>
+                  ) : estimate.insufficient ? (
+                    <span className="quota-hint-warn">（积分不足）</span>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {estimate?.blocked ? (
+            <p className="inline-error" role="alert">
+              {estimate.overLength
+                ? `当前等级单篇文章最大长度为 ${quota?.tier.max_article_length} 字，请缩短或升级会员。`
+                : `积分不足，本次生成预计需要 ${estimate.points} 积分，当前剩余 ${quota?.points_balance} 积分。可在「设置 → 用量与额度」查看或升级会员。`}
+            </p>
+          ) : null}
           {writingError ? <p className="inline-error" role="alert">{writingError}</p> : null}
         </div>
       </div>
@@ -184,16 +238,29 @@ export function WritingView({
       {/* Right panel: document reader */}
       <div className="writing-right-panel">
         {doc ? (
-          <DocumentReader
-            document={doc}
-            generationCount={generationCount}
-            busyAction={busyAction}
-            onRewrite={onRewrite}
-            onOverwriteParagraph={onOverwriteParagraph}
-            onSaveDocument={onSaveDocument}
-            onDownloadDocument={onDownloadDocument}
-            showSaveButton
-          />
+          <>
+            <DocumentReader
+              document={doc}
+              generationCount={generationCount}
+              busyAction={busyAction}
+              canDownload={canDownload}
+              canRewrite={canRewrite}
+              onRewrite={onRewrite}
+              onOverwriteParagraph={onOverwriteParagraph}
+              onSaveDocument={onSaveDocument}
+              onDownloadDocument={onDownloadDocument}
+              showSaveButton
+              paragraphRewritePoints={quota ? quota.operation_points.paragraph_rewrite : null}
+            />
+            <EvaluationPanel
+              evaluation={evaluation}
+              loading={evaluationLoading}
+              error={evaluationError}
+              supported={EVALUATION_GENRES.includes(doc.genre)}
+              genre={doc.genre}
+              onEvaluate={onEvaluate}
+            />
+          </>
         ) : (
           <div className="empty-state">
             <div className="empty-state-title">还没有生成文章</div>

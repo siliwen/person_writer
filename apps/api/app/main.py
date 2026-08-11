@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
@@ -23,6 +24,18 @@ from app.core.auth_service import (
     send_email_bind_code,
     send_phone_bind_code,
     set_session_cookie,
+)
+from app.core import points_service
+from app.core.points_service import (
+    ARTICLE_GENERATION,
+    PARAGRAPH_REWRITE,
+    STYLE_ANALYSIS,
+    charge,
+    get_quota_view,
+    list_usage,
+    parse_target_length_chars,
+    resolve_tier,
+    validate_and_price,
 )
 from app.core.model_gateway import ModelGateway
 from app.core.mvp_service import (
@@ -45,6 +58,8 @@ from app.core.mvp_service import (
     unsave_document,
     update_paragraph_content,
 )
+from app.core import message_service
+from app.core import evaluation_service
 from app.core.prompt_composer import WritingTaskInput, compose_prompt
 from app.core.task_service import InMemoryWritingTaskService
 from app.core.text_parser import extract_upload_text
@@ -72,6 +87,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 task_service = InMemoryWritingTaskService()
+
+from app.admin_routes import router as admin_router
+
+app.include_router(admin_router)
 
 
 class WritingTaskPayload(BaseModel):
@@ -131,6 +150,7 @@ class ConfirmStyleProfileRequest(BaseModel):
 class UpdateStyleProfileRequest(BaseModel):
     name: str
     profile: dict[str, Any] | None = None
+    is_recommended: bool | None = None
 
 
 class RewriteParagraphRequest(BaseModel):
@@ -188,6 +208,13 @@ class PasswordResetConfirmRequest(BaseModel):
 
 def require_current_user(request: Request, db: Session = Depends(get_db)) -> models.User:
     return current_user_from_request(db, request)
+
+
+def optional_current_user(request: Request, db: Session = Depends(get_db)) -> models.User | None:
+    try:
+        return current_user_from_request(db, request)
+    except HTTPException:
+        return None
 
 
 @app.get("/healthz")
@@ -294,6 +321,24 @@ def change_account_password(
     return {"user": user_to_dict(updated)}
 
 
+@app.get("/v1/account/quota")
+def account_quota(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return get_quota_view(db, user)
+
+
+@app.get("/v1/account/usage")
+def account_usage(
+    page: int = 1,
+    page_size: int = 20,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return list_usage(db, user, page=max(1, page), page_size=min(100, max(1, page_size)))
+
+
 @app.post("/v1/auth/password-reset/send-code", status_code=501)
 def password_reset_send_code(_: PasswordResetSendCodeRequest) -> dict[str, str]:
     return {"status": "not_implemented", "message": "Password reset by phone is reserved."}
@@ -348,7 +393,10 @@ def create_style_job(
     user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    # 风格分析按固定积分扣费（当前为本地启发式，无模型调用，真实成本为 0）
+    points = validate_and_price(db, user, STYLE_ANALYSIS)
     job = create_style_analysis_job(db, user_id=user.id, material_ids=request.material_ids)
+    charge(db, user, STYLE_ANALYSIS, points)
     return style_job_to_dict(job)
 
 
@@ -379,10 +427,14 @@ def confirm_style(
 
 @app.get("/v1/style-profiles")
 def get_style_profiles(
-    user: models.User = Depends(require_current_user),
+    user: models.User | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"user_id": user.id, "styles": [style_profile_to_dict(item) for item in list_style_profiles(db, user_id=user.id)]}
+    items = list_style_profiles(db, user_id=user.id if user else None)
+    return {
+        "user_id": user.id if user else None,
+        "styles": [style_profile_to_dict(item) for item in items],
+    }
 
 
 @app.delete("/v1/style-profiles/{style_profile_id}")
@@ -408,6 +460,8 @@ def update_style(
         style_profile_id=style_profile_id,
         name=request.name,
         profile=request.profile,
+        is_recommended=request.is_recommended,
+        is_admin=user.is_admin,
     )
     return style_profile_to_dict(style)
 
@@ -449,6 +503,8 @@ def create_writing_task(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if request.style_profile_id:
+        target_chars = parse_target_length_chars(request.task.target_length)
+        points = validate_and_price(db, user, ARTICLE_GENERATION, target_chars=target_chars)
         created = create_writing(
             db,
             user_id=user.id,
@@ -457,7 +513,21 @@ def create_writing_task(
             requested_mode=request.requested_mode,
             rag_snippets=request.rag_snippets,
         )
-        return writing_task_to_dict(created.task, document=created.document)
+        charge(
+            db,
+            user,
+            ARTICLE_GENERATION,
+            points,
+            document_id=created.document.id,
+            input_tokens=created.task.input_token_count,
+            output_tokens=created.task.output_token_count,
+            model_name=created.task.model_name,
+        )
+        body = writing_task_to_dict(created.task, document=created.document)
+        auto = _run_auto_evaluation(db, user=user, task=created.task, document=created.document)
+        if auto is not None:
+            body["evaluation"] = auto
+        return body
 
     if request.style_profile:
         created_legacy = task_service.create_task(
@@ -509,6 +579,139 @@ def get_writing_task(
     }
 
 
+# ---------------------------------------------------------------------------
+# 文章鉴评（首版仅散文）
+# ---------------------------------------------------------------------------
+
+def _run_auto_evaluation(
+    db: Session,
+    *,
+    user: models.User,
+    task: models.WritingTask,
+    document: models.Document,
+) -> dict[str, Any] | None:
+    """散文生成完成后自动鉴评并推送系统通知。失败不影响主流程。"""
+    if not evaluation_service.is_supported_genre(document.genre):
+        return None
+    try:
+        style = db.get(models.StyleProfile, task.style_profile_id) if task.style_profile_id else None
+        evaluation = evaluation_service.evaluate_document(
+            db,
+            user_id=user.id,
+            document=document,
+            style=style,
+            writing_task=task,
+            trigger="auto",
+        )
+        message_service.create_system_message(
+            db,
+            user.id,
+            title="文章鉴评已生成",
+            body=(
+                f"《{document.title}》鉴评完成：{evaluation.grade} 级"
+                f"（{evaluation.overall_score:.1f} 分）。"
+                "打开文章可查看逐维点评与修改建议。AI 鉴评仅供参考。"
+            ),
+        )
+        return evaluation_service.evaluation_summary(evaluation)
+    except Exception:  # noqa: BLE001 - 鉴评是增值能力，不能拖垮生成主流程
+        db.rollback()
+        return None
+
+
+def _owned_writing_task(db: Session, task_id: str, user: models.User) -> models.WritingTask:
+    task = db.get(models.WritingTask, task_id)
+    if task is None or task.user_id != user.id:
+        raise HTTPException(status_code=404, detail="writing task not found")
+    return task
+
+
+@app.post("/v1/writing-tasks/{task_id}/evaluate")
+def evaluate_writing_task(
+    task_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    task = _owned_writing_task(db, task_id, user)
+    document = db.get(models.Document, task.document_id) if task.document_id else None
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    if not evaluation_service.is_supported_genre(document.genre):
+        raise HTTPException(
+            status_code=422,
+            detail=f"当前仅支持散文鉴评，该文章文体为「{document.genre}」，其他文体的评分量规仍在打磨中。",
+        )
+    style = db.get(models.StyleProfile, task.style_profile_id) if task.style_profile_id else None
+    evaluation = evaluation_service.evaluate_document(
+        db,
+        user_id=user.id,
+        document=document,
+        style=style,
+        writing_task=task,
+        trigger="manual",
+    )
+    return evaluation_service.evaluation_to_dict(evaluation)
+
+
+@app.get("/v1/writing-tasks/{task_id}/evaluation")
+def get_writing_task_evaluation(
+    task_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    task = _owned_writing_task(db, task_id, user)
+    evaluation = evaluation_service.latest_evaluation(db, user_id=user.id, writing_task_id=task.id)
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return evaluation_service.evaluation_to_dict(evaluation)
+
+
+@app.get("/v1/documents/{document_id}/evaluation")
+def get_document_evaluation(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = db.get(models.Document, document_id)
+    if document is None or document.user_id != user.id:
+        raise HTTPException(status_code=404, detail="document not found")
+    evaluation = evaluation_service.latest_evaluation(db, user_id=user.id, document_id=document.id)
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return evaluation_service.evaluation_to_dict(evaluation)
+
+
+@app.post("/v1/documents/{document_id}/evaluate")
+def evaluate_document_endpoint(
+    document_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    document = db.get(models.Document, document_id)
+    if document is None or document.user_id != user.id:
+        raise HTTPException(status_code=404, detail="document not found")
+    if not evaluation_service.is_supported_genre(document.genre):
+        raise HTTPException(
+            status_code=422,
+            detail=f"当前仅支持散文鉴评，该文章文体为「{document.genre}」，其他文体的评分量规仍在打磨中。",
+        )
+    task = db.scalar(
+        select(models.WritingTask)
+        .where(models.WritingTask.document_id == document.id, models.WritingTask.user_id == user.id)
+        .order_by(models.WritingTask.created_at.desc())
+    )
+    style = db.get(models.StyleProfile, document.style_profile_id) if document.style_profile_id else None
+    evaluation = evaluation_service.evaluate_document(
+        db,
+        user_id=user.id,
+        document=document,
+        style=style,
+        writing_task=task,
+        trigger="manual",
+    )
+    return evaluation_service.evaluation_to_dict(evaluation)
+
+
 @app.post("/v1/documents/{document_id}/paragraphs/{paragraph_id}/rewrite")
 def rewrite_document_paragraph(
     document_id: str,
@@ -517,14 +720,28 @@ def rewrite_document_paragraph(
     user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rewritten_content = preview_rewrite_paragraph(
+    tier = resolve_tier(db, user)
+    if tier and not tier.can_rewrite:
+        raise HTTPException(status_code=403, detail="当前等级不支持段落重写，请升级会员。")
+    points = validate_and_price(db, user, PARAGRAPH_REWRITE)
+    result = preview_rewrite_paragraph(
         db,
         user_id=user.id,
         document_id=document_id,
         paragraph_id=paragraph_id,
         instruction=request.instruction,
     )
-    return {"rewritten_content": rewritten_content}
+    charge(
+        db,
+        user,
+        PARAGRAPH_REWRITE,
+        points,
+        document_id=document_id,
+        input_tokens=result["input_token_count"],
+        output_tokens=result["output_token_count"],
+        model_name=result["model_name"],
+    )
+    return {"rewritten_content": result["content"]}
 
 
 @app.put("/v1/documents/{document_id}/paragraphs/{paragraph_id}")
@@ -590,6 +807,9 @@ def download_document_docx(
     user: models.User = Depends(require_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
+    tier = resolve_tier(db, user)
+    if tier and not tier.can_download:
+        raise HTTPException(status_code=403, detail="当前等级不支持下载，请升级会员。")
     document = get_user_document(db, user_id=user.id, document_id=document_id)
     data = generate_docx_bytes(document)
     filename = f"{document.title}.docx".replace(" ", "_").replace("/", "_")
@@ -601,12 +821,59 @@ def download_document_docx(
     )
 
 
+# ---------------------------------------------------------------------------
+# 消息中心（用户侧）
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/messages")
+def list_my_messages(
+    unread_only: bool = False,
+    page: int = 1,
+    page_size: int = 20,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return message_service.list_user_inbox(
+        db, user.id, unread_only=unread_only, page=max(1, page), page_size=min(100, max(1, page_size))
+    )
+
+
+@app.get("/v1/messages/unread-count")
+def my_unread_count(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return {"unread_count": message_service.get_unread_count(db, user.id)}
+
+
+@app.post("/v1/messages/{message_id}/read")
+def read_message(
+    message_id: str,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    marked = message_service.mark_read(db, message_id, user.id)
+    return {"status": "ok", "marked": marked}
+
+
+@app.post("/v1/messages/read-all")
+def read_all_messages(
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    marked = message_service.mark_all_read(db, user.id)
+    return {"status": "ok", "marked": marked}
+
+
 def user_to_dict(user: models.User) -> dict[str, Any]:
     return {
         "user_id": user.id,
         "username": user.username,
         "display_name": user.display_name,
         "mode": user.mode,
+        "tier_code": user.tier_id,
+        "points_balance": user.points_balance,
+        "is_admin": bool(user.is_admin),
         "phone_number": user.phone_number,
         "phone_verified": user.phone_verified_at is not None,
         "email": user.email,
@@ -652,6 +919,7 @@ def style_profile_to_dict(style: models.StyleProfile) -> dict[str, Any]:
         "status": style.status,
         "profile": style.profile,
         "is_default": style.is_default,
+        "is_recommended": style.is_recommended,
         "created_at": style.created_at.isoformat(),
     }
 

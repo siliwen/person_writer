@@ -6,11 +6,12 @@ import type { ViewName } from "@/lib/types";
 type SidebarProps = {
   currentView: ViewName;
   onNavigate: (view: ViewName) => void;
+  isAdmin?: boolean;
 };
 
 const STORAGE_KEY = "sidebar-expanded";
 
-const navItems: Array<{ view: ViewName; label: string; icon: React.ReactNode }> = [
+const navItems: Array<{ view: ViewName; label: string; icon: React.ReactNode; adminOnly?: boolean }> = [
   {
     view: "dashboard",
     label: "首页",
@@ -52,6 +53,17 @@ const navItems: Array<{ view: ViewName; label: string; icon: React.ReactNode }> 
       </svg>
     ),
   },
+  {
+    view: "admin",
+    label: "后台管理",
+    adminOnly: true,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z" />
+        <path d="M12 8v4M10 10h4" />
+      </svg>
+    ),
+  },
 ];
 
 function readInitialExpanded(): boolean {
@@ -63,26 +75,35 @@ function readInitialExpanded(): boolean {
   }
 }
 
-export function Sidebar({ currentView, onNavigate }: SidebarProps) {
-  const [expanded, setExpanded] = useState<boolean>(readInitialExpanded);
+export function Sidebar({ currentView, onNavigate, isAdmin }: SidebarProps) {
+  const [expanded, setExpanded] = useState<boolean>(false);
+  const [hydrated, setHydrated] = useState<boolean>(false);
 
   useEffect(() => {
+    setHydrated(true);
+    setExpanded(readInitialExpanded());
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, expanded ? "true" : "false");
     } catch {
       /* ignore */
     }
-  }, [expanded]);
+  }, [expanded, hydrated]);
+
+  const visibleItems = isAdmin ? navItems : navItems.filter((i) => !i.adminOnly);
 
   return (
-    <nav className={`sidebar${expanded ? " expanded" : ""}`}>
+    <nav className={`sidebar${hydrated && expanded ? " expanded" : ""}`}>
       <div className="sidebar-logo">
         <span className="sidebar-logo-mark">墨</span>
         <span className="sidebar-logo-text">墨写</span>
       </div>
 
       <div className="sidebar-nav">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <button
             key={item.view}
             type="button"

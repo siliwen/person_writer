@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -11,6 +12,10 @@ from app.database import Base
 
 def utc_now() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(12)}"
 
 
 class User(Base):
@@ -26,6 +31,12 @@ class User(Base):
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 会员等级与积分（配置驱动，等级定义见 membership_tiers 表，不写死在代码里）
+    tier_id: Mapped[str | None] = mapped_column(ForeignKey("membership_tiers.code"), index=True, nullable=True)
+    points_balance: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quota_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    quota_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -108,6 +119,7 @@ class StyleProfile(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -159,6 +171,8 @@ class WritingTask(Base):
     effective_mode: Mapped[str] = mapped_column(String(48), nullable=False)
     rag_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 原始写作要求快照（target_length / must_include / must_avoid 等），鉴评的「指令遵循」维度据此判定
+    requirements: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     model_provider: Mapped[str] = mapped_column(String(64), nullable=False, default="mock")
     model_name: Mapped[str] = mapped_column(String(120), nullable=False, default="mock-writer")
     input_token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -178,3 +192,177 @@ class ModelUsageLog(Base):
     output_token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estimated_cost: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class MembershipTier(Base):
+    """会员等级配置表——所有等级与权益均入库，代码只读取不写死。"""
+
+    __tablename__ = "membership_tiers"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)  # free / basic / pro / team
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    monthly_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    price_monthly: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 月费，单位：分
+    style_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    material_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    can_download: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_rewrite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    max_article_length: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = 不限
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ArticleLengthBracket(Base):
+    """文章长度档位→积分映射表（长文折扣，非严格线性）。"""
+
+    __tablename__ = "article_length_brackets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    label: Mapped[str] = mapped_column(String(64), nullable=False)
+    min_length: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_length: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = 无上限
+    points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class OperationCost(Base):
+    """固定操作积分表（风格分析、段落重写等不随长度变化的操作）。"""
+
+    __tablename__ = "operation_costs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    op_type: Mapped[str] = mapped_column(String(48), unique=True, nullable=False)
+    points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    description: Mapped[str | None] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class ModelPricing(Base):
+    """模型单价表——内部真实成本核算用（¥/百万 tokens），不写死。"""
+
+    __tablename__ = "model_pricing"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    input_price_per_m: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    output_price_per_m: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="CNY")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    note: Mapped[str | None] = mapped_column(String(255))
+
+
+class UsageRecord(Base):
+    """积分消耗流水——管理后台查每个会员的积分消耗用。"""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    op_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    points_consumed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    document_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_cny: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AdminAuditLog(Base):
+    """管理后台操作审计日志——所有写操作自动留痕，只追加、不可改删。"""
+
+    __tablename__ = "admin_audit_logs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    actor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)  # create/update/delete/adjust/set_tier/ban...
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)  # tier/user/bracket/opcost/price/...
+    target_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    before: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ArticleEvaluation(Base):
+    """文章鉴评报告——对生成结果按文体量规 + 用户风格档案打分点评。
+
+    report 为结构化 JSON：overall / dimensions / suggestions / style_deviations /
+    ai_tell_flags / features / disclaimer。同一篇文章可多次鉴评，取最新一条展示。
+    """
+
+    __tablename__ = "article_evaluations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True, nullable=False)
+    writing_task_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    genre: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 同一篇文章的第几次鉴评（从 1 起）。created_at 精度到秒，同秒多次鉴评靠它稳定排序。
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    overall_score: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False, default=0)
+    grade: Mapped[str] = mapped_column(String(8), nullable=False, default="C")
+    report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False, default="auto")  # auto/manual
+    model_provider: Mapped[str] = mapped_column(String(64), nullable=False, default="mock")
+    model_name: Mapped[str] = mapped_column(String(120), nullable=False, default="mock-evaluate")
+    input_token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class Message(Base):
+    """站内信（管理员手动撰写或系统自动触发）。接收范围由 target_type 决定。"""
+
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sender_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="announcement")  # system/announcement/direct
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False, default="all")  # all/tier/specific
+    target_tiers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    target_user_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    channels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)  # ["in_app"] 预留 email
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="sent")  # draft/sent/scheduled/recalled
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    important: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_automated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recipient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class MessageDelivery(Base):
+    """每条消息的实际送达记录，用于未读计数与已读率。"""
+
+    __tablename__ = "message_deliveries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class MessageTemplate(Base):
+    """消息模板（运营复用）。"""
+
+    __tablename__ = "message_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="announcement")
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, default="in_app")  # 预留
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

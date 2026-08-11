@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import type { BusyAction, CurrentUser, Material, StyleProfile } from "@/lib/types";
+import { useEffect, useState } from "react";
+import type { BusyAction, CurrentUser, Material, QuotaView, StyleProfile, UsageRecord } from "@/lib/types";
+import { fetchUsage } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 type SettingsViewProps = {
   currentUser: CurrentUser | null;
+  quota: QuotaView | null;
   materials: Material[];
   styles: StyleProfile[];
   generationCount: number;
   busyAction: BusyAction;
+  initialTab?: "profile" | "security" | "usage" | "privacy";
   onSendPhoneCode: (phone: string) => Promise<string>;
   onBindPhone: (phone: string, code: string) => Promise<CurrentUser>;
   onSendEmailCode: (email: string) => Promise<string>;
@@ -18,12 +21,32 @@ type SettingsViewProps = {
   onLogout: () => void;
 };
 
+const OP_TYPE_LABELS: Record<string, string> = {
+  style_analysis: "风格分析",
+  article_generation: "文章生成",
+  paragraph_rewrite: "段落重写",
+  admin_adjust: "管理员调整",
+};
+
+function formatOpType(opType: string): string {
+  return OP_TYPE_LABELS[opType] ?? opType;
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("zh-CN", { hour12: false });
+}
+
 export function SettingsView({
   currentUser,
+  quota,
   materials,
   styles,
   generationCount,
   busyAction,
+  initialTab = "profile",
   onSendPhoneCode,
   onBindPhone,
   onSendEmailCode,
@@ -45,9 +68,34 @@ export function SettingsView({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [showPasswordSuccessModal, setShowPasswordSuccessModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"profile" | "security" | "usage" | "privacy">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "security" | "usage" | "privacy">(initialTab);
+  const [usageRecords, setUsageRecords] = useState<UsageRecord[]>([]);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   const busy = busyAction !== null;
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (activeTab === "usage") {
+      void loadUsage();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  async function loadUsage() {
+    setUsageLoading(true);
+    try {
+      const page = await fetchUsage(1, 50);
+      setUsageRecords(page.items);
+    } catch {
+      setUsageRecords([]);
+    } finally {
+      setUsageLoading(false);
+    }
+  }
 
   async function handleSendCode() {
     if (!requireAuth()) return;
@@ -341,32 +389,61 @@ export function SettingsView({
       ) : null}
 
       {activeTab === "usage" ? (
-        <div className="card">
-          <div className="settings-section-title">
-            本月用量 <span style={{ fontSize: "13px", color: "var(--text-tertiary)", fontWeight: 400 }}>· {currentUser.mode === "admin" ? "管理员" : "免费版"}</span>
+        <div style={{ display: "grid", gap: "20px" }}>
+          <div className="card">
+            <div className="settings-section-title">
+              会员与额度
+              {quota ? (
+                <span style={{ fontSize: "13px", color: "var(--text-tertiary)", fontWeight: 400 }}>
+                  · {quota.tier.name}
+                  {currentUser?.is_admin ? "（管理员）" : ""}
+                </span>
+              ) : null}
+            </div>
+
+            {quota ? (
+              <>
+                <div className="quota-summary">
+                  <div className="quota-summary-main">
+                    <div className="quota-summary-value">{quota.points_balance}</div>
+                    <div className="quota-summary-label">剩余积分 / 本月 {quota.tier.monthly_points}</div>
+                  </div>
+                  <div className="quota-summary-side">
+                    <div>单篇最大长度：{quota.tier.max_article_length > 0 ? `${quota.tier.max_article_length} 字` : "不限"}</div>
+                    <div>额度重置日：{formatDateTime(quota.quota_period_end)}</div>
+                    <div>下载：{quota.tier.can_download ? "支持" : "不支持"} · 重写：{quota.tier.can_rewrite ? "支持" : "不支持"}</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="inline-status">额度信息加载中……</p>
+            )}
           </div>
-          <div className="usage-grid">
-            <div>
-              <div className="usage-item-label">参考作品</div>
-              <div className="usage-item-value">{materials.length}<span className="usage-item-unit">篇</span></div>
-              <div className="usage-bar">
-                <div className="usage-bar-fill" style={{ width: `${Math.min(100, materials.length * 10)}%`, background: "var(--accent)" }} />
+
+          <div className="card">
+            <div className="settings-section-title">积分消耗历史</div>
+            {usageLoading ? (
+              <p className="inline-status">加载中……</p>
+            ) : usageRecords.length === 0 ? (
+              <p className="inline-status">还没有积分消耗记录。</p>
+            ) : (
+              <div className="usage-history">
+                <div className="usage-history-row usage-history-head">
+                  <span>操作</span>
+                  <span>消耗</span>
+                  <span>时间</span>
+                </div>
+                {usageRecords.map((r) => (
+                  <div className="usage-history-row" key={r.id}>
+                    <span>{formatOpType(r.op_type)}</span>
+                    <span className={r.points_consumed >= 0 ? "usage-cost" : "usage-gain"}>
+                      {r.points_consumed >= 0 ? `-${r.points_consumed}` : `+${Math.abs(r.points_consumed)}`} 分
+                    </span>
+                    <span>{formatDateTime(r.created_at)}</span>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div>
-              <div className="usage-item-label">风格档案</div>
-              <div className="usage-item-value">{styles.length}<span className="usage-item-unit">个</span></div>
-              <div className="usage-bar">
-                <div className="usage-bar-fill" style={{ width: `${Math.min(100, styles.length * 20)}%`, background: "var(--success)" }} />
-              </div>
-            </div>
-            <div>
-              <div className="usage-item-label">生成文章</div>
-              <div className="usage-item-value">{generationCount}<span className="usage-item-unit">篇</span></div>
-              <div className="usage-bar">
-                <div className="usage-bar-fill" style={{ width: `${Math.min(100, generationCount * 5)}%`, background: "var(--warning)" }} />
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="upgrade-banner">

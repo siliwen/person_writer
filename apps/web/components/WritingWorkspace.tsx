@@ -2,16 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ArticleEvaluation,
   BusyAction,
   CurrentUser,
   Material,
   ModelStatus,
+  QuotaView,
   StyleJob,
   StyleProfile,
   ViewName,
   WritingDocument,
 } from "@/lib/types";
-import { apiBase, parseJson } from "@/lib/api";
+import { EVALUATION_GENRES } from "@/lib/types";
+import {
+  apiBase,
+  fetchDocumentEvaluation,
+  fetchQuota,
+  fetchUnreadCount,
+  parseJson,
+  requestDocumentEvaluation,
+} from "@/lib/api";
+import { estimateArticlePoints, parseTargetLengthChars } from "@/lib/quota";
 import { summarizeStyleDraft } from "@/lib/styleDraft";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./Sidebar";
@@ -23,6 +34,9 @@ import { WritingView, type WritingParams } from "./WritingView";
 import { DocumentReader } from "./DocumentReader";
 import { ArticlesView } from "./ArticlesView";
 import { SettingsView } from "./SettingsView";
+import { AdminPanel } from "./AdminPanel";
+import { MessageCenter } from "./MessageCenter";
+import { EvaluationPanel } from "./EvaluationPanel";
 
 const viewTitles: Record<ViewName, { title: string; subtitle: string }> = {
   dashboard: { title: "工作台", subtitle: "" },
@@ -31,6 +45,7 @@ const viewTitles: Record<ViewName, { title: string; subtitle: string }> = {
   reading: { title: "文章详情", subtitle: "查看和修改已保存的文章" },
   articles: { title: "文章库", subtitle: "查看和管理你保存的文章" },
   settings: { title: "设置", subtitle: "管理账号、安全和使用量" },
+  admin: { title: "后台管理", subtitle: "会员、等级、积分与系统配置" },
 };
 
 export function WritingWorkspace() {
@@ -45,16 +60,26 @@ function WorkspaceInner() {
   const { currentUser, setCurrentUser, requireAuth, openAuth, logout: authLogout } = useAuth();
 
   const [currentView, setCurrentView] = useState<ViewName>("styles");
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"profile" | "security" | "usage" | "privacy">("profile");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [newStyleModalOpen, setNewStyleModalOpen] = useState(false);
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [styles, setStyles] = useState<StyleProfile[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState("");
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [quota, setQuota] = useState<QuotaView | null>(null);
   const [document, setDocument] = useState<WritingDocument | null>(null);
   const [generationCount, setGenerationCount] = useState(0);
   const [savedDocuments, setSavedDocuments] = useState<WritingDocument[]>([]);
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+
+  // 文章鉴评（首版仅散文）
+  const [evaluation, setEvaluation] = useState<ArticleEvaluation | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
 
   const [styleJob, setStyleJob] = useState<StyleJob | null>(null);
   const [styleName, setStyleName] = useState("我的散文风格");
@@ -88,6 +113,7 @@ function WorkspaceInner() {
 
   useEffect(() => {
     void refreshAll();
+    void loadUnread();
   }, []);
 
   // React to auth state changes (login / logout)
@@ -100,19 +126,41 @@ function WorkspaceInner() {
     if (userId && !prevId) {
       // User logged in (or initial session found) — load user data
       setStatus(`已登录：${currentUser!.username}。可以继续使用工作台。`);
-      void Promise.all([loadMaterials(), loadStyles(), loadSavedDocuments()]);
+      void Promise.all([loadMaterials(), loadStyles(), loadSavedDocuments(), loadQuota()]);
+      void loadUnread();
     } else if (!userId && prevId) {
+      setUnreadCount(0);
       // User logged out — clear all user data
       setMaterials([]);
       setStyles([]);
       setSavedDocuments([]);
       setSelectedStyleId("");
       setDocument(null);
+      setEvaluation(null);
       setGenerationCount(0);
+      setQuota(null);
       setCurrentView("styles");
       setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
     }
   }, [currentUser]);
+
+  async function loadQuota() {
+    try {
+      const q = await fetchQuota();
+      setQuota(q);
+    } catch {
+      setQuota(null);
+    }
+  }
+
+  async function loadUnread() {
+    try {
+      const res = await fetchUnreadCount();
+      setUnreadCount(res.unread_count);
+    } catch {
+      setUnreadCount(0);
+    }
+  }
 
   async function refreshAll() {
     // Check if user has an existing session
@@ -125,7 +173,7 @@ function WorkspaceInner() {
     } catch {
       // Not logged in
     }
-    await loadModelStatus();
+    await Promise.all([loadModelStatus(), loadStyles()]);
   }
 
   async function loadSavedDocuments() {
@@ -178,6 +226,16 @@ function WorkspaceInner() {
     setAnalysisError("");
     setConfirmError("");
     setNewStyleModalOpen(true);
+  }
+
+  function handleOpenSettings(tab: "profile" | "security" | "usage" | "privacy") {
+    setSettingsInitialTab(tab);
+    setCurrentView("settings");
+  }
+
+  function handleOpenMessages() {
+    void loadUnread();
+    setMessageOpen(true);
   }
 
   function handleCloseNewStyle() {
@@ -310,6 +368,7 @@ function WorkspaceInner() {
       }
       if (nextStyles.length === 0) {
         setDocument(null);
+        setEvaluation(null);
         setGenerationCount(0);
       }
       setStatus(`风格"${styleToDelete.name}"已删除。`);
@@ -402,6 +461,40 @@ function WorkspaceInner() {
     }
   }
 
+  /** 拉取指定文档的最新鉴评报告；非散文直接清空，不打接口。 */
+  async function loadEvaluation(doc: WritingDocument | null) {
+    setEvaluationError("");
+    if (!doc || !EVALUATION_GENRES.includes(doc.genre)) {
+      setEvaluation(null);
+      return;
+    }
+    try {
+      const report = await fetchDocumentEvaluation(doc.id);
+      setEvaluation(report);
+    } catch {
+      // 报告拉取失败不打断主流程，用户可手动点「开始鉴评」
+      setEvaluation(null);
+    }
+  }
+
+  /** 手动触发或重新触发鉴评。 */
+  async function handleEvaluate() {
+    if (!requireAuth()) return;
+    if (!document) return;
+    setEvaluationLoading(true);
+    setEvaluationError("");
+    try {
+      const report = await requestDocumentEvaluation(document.id);
+      setEvaluation(report);
+      setStatus(`鉴评完成：${report.grade} 级（${report.overall_score.toFixed(1)} 分）。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEvaluationError(`鉴评失败：${message}`);
+    } finally {
+      setEvaluationLoading(false);
+    }
+  }
+
   async function handleGenerate(params: WritingParams) {
     setWritingError("");
     if (!params.title) {
@@ -415,6 +508,22 @@ function WorkspaceInner() {
     if (!params.targetLength) {
       setWritingError("请填写目标字数或篇幅。");
       return;
+    }
+    // 生成前预校验：等级长度上限与积分余额（后端会再次校验，这里提供即时反馈）
+    if (quota) {
+      const chars = parseTargetLengthChars(params.targetLength);
+      const tier = quota.tier;
+      if (tier.max_article_length && tier.max_article_length > 0 && chars > tier.max_article_length) {
+        setWritingError(`当前等级单篇文章最大长度为 ${tier.max_article_length} 字，请缩短或升级会员。`);
+        return;
+      }
+      const estimated = estimateArticlePoints(chars, quota.article_length_brackets);
+      if (quota.points_balance < estimated) {
+        setWritingError(
+          `积分不足，本次生成预计需要 ${estimated} 积分，当前剩余 ${quota.points_balance} 积分。可在「设置 → 用量与额度」查看或升级会员。`
+        );
+        return;
+      }
     }
     setBusyAction("writing");
     const nextGenerationCount = generationCount + 1;
@@ -441,10 +550,18 @@ function WorkspaceInner() {
           },
         }),
       });
-      const body = await parseJson<{ document: WritingDocument }>(response);
+      const body = await parseJson<{ document: WritingDocument; evaluation?: { grade: string } | null }>(response);
       setDocument(body.document);
       setGenerationCount(nextGenerationCount);
-      setStatus(`第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`);
+      setStatus(
+        body.evaluation
+          ? `第 ${nextGenerationCount} 版文章已生成，鉴评 ${body.evaluation.grade} 级。点击正文里的自然段即可提交修改意见。`
+          : `第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`
+      );
+      void loadQuota();
+      void loadUnread();
+      // 散文生成后端已自动鉴评，这里直接拉取报告；其他文体不请求。
+      void loadEvaluation(body.document);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWritingError(`本次生成失败。原因：${message}`);
@@ -512,6 +629,7 @@ function WorkspaceInner() {
     setGenerationCount(1);
     setCurrentView("reading");
     setStatus(`已打开文章「${targetDocument.title}」。可继续修改或下载。`);
+    void loadEvaluation(targetDocument);
   }
 
   async function handleUnsaveDocument(documentId: string): Promise<void> {
@@ -550,6 +668,7 @@ function WorkspaceInner() {
       );
       const body = await parseJson<{ rewritten_content: string }>(response);
       setStatus("AI 重写完成，请在弹窗中查看结果。");
+      void loadQuota();
       return body.rewritten_content;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -669,7 +788,7 @@ function WorkspaceInner() {
 
   return (
     <div className="app-shell">
-      <Sidebar currentView={currentView} onNavigate={handleNavigate} />
+      <Sidebar currentView={currentView} onNavigate={handleNavigate} isAdmin={currentUser?.is_admin} />
       <div className="main-area">
         <div className="topbar">
           <div className="topbar-left">
@@ -679,14 +798,94 @@ function WorkspaceInner() {
           <div className="topbar-right">
             {currentUser ? (
               <>
-                <span className="badge badge-neutral">{currentUser.username}</span>
                 <button
-                  className="btn btn-ghost btn-sm"
+                  className="topbar-capsule"
                   type="button"
-                  onClick={() => setCurrentView("settings")}
+                  onClick={() => handleOpenSettings("usage")}
+                  title="查看用量与额度"
                 >
-                  账号
+                  <span className="topbar-capsule-main">
+                    <span className="topbar-capsule-icon">⚡</span>
+                    <span
+                      className={`topbar-capsule-points ${
+                        (quota?.points_balance ?? currentUser.points_balance) <= 0 ? "zero" : ""
+                      }`}
+                    >
+                      {quota?.points_balance ?? currentUser.points_balance}
+                    </span>
+                    <span className="topbar-capsule-unit">积分</span>
+                  </span>
+                  <span className="topbar-capsule-divider" />
+                  <span className="topbar-capsule-tier">
+                    {quota?.tier.name ?? currentUser.tier_code ?? "免费版"}
+                  </span>
                 </button>
+                <button
+                  className="topbar-bell"
+                  type="button"
+                  onClick={handleOpenMessages}
+                  aria-label="消息"
+                  title="消息中心"
+                >
+                  <span className="topbar-bell-icon">🔔</span>
+                  {unreadCount > 0 ? (
+                    <span className="topbar-bell-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>
+                  ) : null}
+                </button>
+                <div className="topbar-user-menu">
+                  <button
+                    className="topbar-user-trigger"
+                    type="button"
+                    onClick={() => setUserMenuOpen((o) => !o)}
+                    title="账户菜单"
+                    aria-haspopup="true"
+                    aria-expanded={userMenuOpen}
+                  >
+                    <span className="topbar-avatar">
+                      {currentUser.username?.charAt(0)?.toUpperCase() ?? "U"}
+                    </span>
+                    <span className="topbar-username">{currentUser.username}</span>
+                    <span className="topbar-chevron">▼</span>
+                  </button>
+
+                  {userMenuOpen ? (
+                    <>
+                      <div className="topbar-menu-overlay" onClick={() => setUserMenuOpen(false)} />
+                      <div className="topbar-dropdown" role="menu">
+                        <button
+                          type="button"
+                          className="topbar-dropdown-item"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleOpenSettings("profile");
+                          }}
+                        >
+                          个人资料
+                        </button>
+                        <button
+                          type="button"
+                          className="topbar-dropdown-item"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleOpenSettings("usage");
+                          }}
+                        >
+                          用量与额度
+                        </button>
+                        <button
+                          type="button"
+                          className="topbar-dropdown-item danger"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleLogout();
+                          }}
+                        >
+                          退出登录
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </>
             ) : (
               <button
@@ -746,6 +945,7 @@ function WorkspaceInner() {
             <WritingView
               styles={styles}
               selectedStyleId={selectedStyleId}
+              quota={quota}
               onSelectStyle={setSelectedStyleId}
               document={document}
               generationCount={generationCount}
@@ -756,22 +956,39 @@ function WorkspaceInner() {
               onOverwriteParagraph={handleOverwriteParagraph}
               onSaveDocument={handleSaveDocument}
               onDownloadDocument={() => handleDownloadDocument()}
+              evaluation={evaluation}
+              evaluationLoading={evaluationLoading}
+              evaluationError={evaluationError}
+              onEvaluate={handleEvaluate}
             />
           ) : null}
 
           {currentView === "reading" ? (
             document ? (
-              <DocumentReader
-                document={document}
-                generationCount={generationCount}
-                busyAction={busyAction}
-                onRewrite={handleRewrite}
-                onOverwriteParagraph={handleOverwriteParagraph}
-                onDownloadDocument={() => handleDownloadDocument()}
-                showSaveButton={false}
-                showBackButton
-                onBack={() => setCurrentView("articles")}
-              />
+              <>
+                <DocumentReader
+                  document={document}
+                  generationCount={generationCount}
+                  busyAction={busyAction}
+                  canDownload={quota ? quota.tier.can_download : true}
+                  canRewrite={quota ? quota.tier.can_rewrite : true}
+                  onRewrite={handleRewrite}
+                  onOverwriteParagraph={handleOverwriteParagraph}
+                  onDownloadDocument={() => handleDownloadDocument()}
+                  showSaveButton={false}
+                  showBackButton
+                  onBack={() => setCurrentView("articles")}
+                  paragraphRewritePoints={quota ? quota.operation_points.paragraph_rewrite : null}
+                />
+                <EvaluationPanel
+                  evaluation={evaluation}
+                  loading={evaluationLoading}
+                  error={evaluationError}
+                  supported={EVALUATION_GENRES.includes(document.genre)}
+                  genre={document.genre}
+                  onEvaluate={handleEvaluate}
+                />
+              </>
             ) : (
               <div className="empty-state">
                 <div className="empty-state-title">没有选中的文章</div>
@@ -794,10 +1011,12 @@ function WorkspaceInner() {
           {currentView === "settings" ? (
             <SettingsView
               currentUser={currentUser}
+              quota={quota}
               materials={materials}
               styles={styles}
               generationCount={generationCount}
               busyAction={busyAction}
+              initialTab={settingsInitialTab}
               onSendPhoneCode={handleSendPhoneCode}
               onBindPhone={handleBindPhone}
               onSendEmailCode={handleSendEmailCode}
@@ -806,6 +1025,8 @@ function WorkspaceInner() {
               onLogout={handleLogout}
             />
           ) : null}
+
+          {currentView === "admin" ? <AdminPanel onNewStyle={handleOpenNewStyle} /> : null}
         </div>
       </div>
 
@@ -827,6 +1048,7 @@ function WorkspaceInner() {
           onUpload={handleUpload}
           onConfirm={handleConfirmStyle}
           onClose={handleCloseNewStyle}
+          styleAnalysisPoints={quota ? quota.operation_points.style_analysis : null}
         />
       ) : null}
 
@@ -842,6 +1064,10 @@ function WorkspaceInner() {
           onSave={handleSaveEditStyle}
           onClose={handleCloseEditStyle}
         />
+      ) : null}
+
+      {messageOpen ? (
+        <MessageCenter onClose={() => setMessageOpen(false)} onUnreadChange={setUnreadCount} />
       ) : null}
     </div>
   );

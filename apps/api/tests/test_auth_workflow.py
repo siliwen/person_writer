@@ -71,7 +71,8 @@ def test_business_endpoints_require_login() -> None:
     client = TestClient(app)
 
     assert client.get("/v1/materials").status_code == 401
-    assert client.get("/v1/style-profiles").status_code == 401
+    # /v1/style-profiles 现支持匿名访问（仅返回推荐风格），不再要求登录
+    assert client.get("/v1/style-profiles").status_code == 200
     assert client.post("/v1/style-analysis-jobs", json={"material_ids": []}).status_code == 401
     assert client.post(
         "/v1/writing-tasks",

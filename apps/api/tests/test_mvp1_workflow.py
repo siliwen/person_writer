@@ -67,11 +67,31 @@ def _upload_material(client: TestClient, filename: str, content: str) -> str:
     return material["id"]
 
 
+def _grant_paid_features(client: TestClient) -> None:
+    """将当前登录用户提升到 pro 等级，使其在 mvp 流程测试中拥有重写/下载权限与充足积分。
+
+    免费版的功能限制（不能重写/下载、积分限额）由 tests/test_quota_and_admin.py 单独覆盖，
+    此处仅为让「功能可用性」类测试不受会员等级限制影响。
+    """
+    from app import models
+    from app.database import SessionLocal
+
+    me = client.get("/v1/me").json()
+    with SessionLocal() as db:
+        user = db.get(models.User, me["user_id"])
+        if user is not None:
+            pro = db.get(models.MembershipTier, "pro")
+            user.tier_id = "pro"
+            user.points_balance = pro.monthly_points if pro else 200
+            db.commit()
+
+
 def test_demo_user_can_upload_analyze_confirm_write_and_rewrite_one_paragraph() -> None:
     client = TestClient(app)
 
     first_id = _upload_material(client, "a.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
     second_id = _upload_material(client, "b.txt", "雨落在铁皮棚上。\n\n母亲把灯拧暗。")
+    _grant_paid_features(client)
 
     job_response = client.post("/v1/style-analysis-jobs", json={"material_ids": [first_id, second_id]})
     assert job_response.status_code == 200
@@ -521,6 +541,7 @@ def test_repeated_mock_writing_requests_create_distinct_documents(monkeypatch) -
     _force_gateway_fallback(monkeypatch)
     client = TestClient(app)
     material_id = _upload_material(client, "repeat.txt", "门口有一只旧木箱。\n\n雨停后，地上还有水痕。")
+    _grant_paid_features(client)
     job = client.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
     style = client.post(
         "/v1/style-profiles/confirm",
@@ -552,7 +573,10 @@ def test_writing_task_sends_style_intensity_to_model_prompt(monkeypatch) -> None
 
     def fake_generate(self, *, messages, purpose, fallback):
         nonlocal captured_user_prompt
-        captured_user_prompt = messages[1]["content"]
+        # 散文生成完成后会自动触发一次鉴评（purpose="article_evaluate"），
+        # 这里只捕获写作本身的 prompt，避免被后续调用覆盖。
+        if purpose == "writing":
+            captured_user_prompt = messages[1]["content"]
         return ModelResult(
             content="第一段原创内容。\n\n第二段原创内容。\n\n第三段原创内容。",
             model_provider="mock",
@@ -597,6 +621,7 @@ def test_preview_rewrite_does_not_modify_original_document(monkeypatch) -> None:
     _force_gateway_fallback(monkeypatch)
     client = TestClient(app)
     material_id = _upload_material(client, "preview-rewrite.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    _grant_paid_features(client)
     job = client.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
     style = client.post(
         "/v1/style-profiles/confirm",

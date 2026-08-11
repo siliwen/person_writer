@@ -46,6 +46,12 @@ def client():
     )
     Base.metadata.create_all(bind=engine)
 
+    # Seed membership config (tiers/brackets/operation costs/model pricing) into the
+    # isolated in-memory database so quota/admin tests see the same defaults as prod.
+    from app.database import _seed_membership_data
+
+    _seed_membership_data(TestingSessionLocal)
+
     def override_get_db():
         db = TestingSessionLocal()
         try:

@@ -9,6 +9,8 @@ type DocumentReaderProps = {
   document: WritingDocument;
   generationCount: number;
   busyAction: BusyAction;
+  canDownload?: boolean;
+  canRewrite?: boolean;
   onRewrite: (paragraphId: string, instruction: string) => Promise<string>;
   onOverwriteParagraph: (paragraphId: string, newContent: string) => Promise<void>;
   onSaveDocument?: () => Promise<void>;
@@ -16,12 +18,16 @@ type DocumentReaderProps = {
   showSaveButton?: boolean;
   showBackButton?: boolean;
   onBack?: () => void;
+  /** 段落 AI 重写将消耗的积分；不传则重写按钮不展示积分。 */
+  paragraphRewritePoints?: number | null;
 };
 
 export function DocumentReader({
   document: doc,
   generationCount,
   busyAction,
+  canDownload = true,
+  canRewrite = true,
   onRewrite,
   onOverwriteParagraph,
   onSaveDocument,
@@ -29,6 +35,7 @@ export function DocumentReader({
   showSaveButton = true,
   showBackButton = false,
   onBack,
+  paragraphRewritePoints,
 }: DocumentReaderProps) {
   const { requireAuth } = useAuth();
   const [rewriteParagraph, setRewriteParagraph] = useState<DocumentParagraph | null>(null);
@@ -132,28 +139,38 @@ export function DocumentReader({
               className="btn btn-primary btn-sm"
               type="button"
               onClick={handleDownload}
-              disabled={isSaving || isDownloading}
+              disabled={isSaving || isDownloading || !canDownload}
+              title={canDownload ? "下载文章为 docx" : "当前等级不支持下载，请升级会员"}
             >
               {isDownloading ? "下载中…" : "下载文章"}
             </button>
           </div>
         </div>
         {actionMessage ? <p className="document-action-message">{actionMessage}</p> : null}
+        {!canRewrite ? (
+          <p className="document-action-message document-action-locked">
+            当前等级不支持段落重写（免费版限制），升级会员后可逐段精修。
+          </p>
+        ) : null}
         {doc.paragraphs.map((paragraph) => (
           <div
             key={paragraph.id}
-            className={`paragraph-block ${rewriteParagraph?.id === paragraph.id ? "active" : ""}`}
-            onClick={() => setRewriteParagraph(paragraph)}
+            className={`paragraph-block ${rewriteParagraph?.id === paragraph.id ? "active" : ""} ${canRewrite ? "" : "locked"}`}
+            onClick={() => {
+              if (canRewrite) setRewriteParagraph(paragraph);
+            }}
           >
             <button
               className="paragraph-edit-btn"
               type="button"
+              disabled={!canRewrite}
+              title={canRewrite ? "修改这一段" : "当前等级不支持重写，请升级会员"}
               onClick={(e) => {
                 e.stopPropagation();
-                setRewriteParagraph(paragraph);
+                if (canRewrite) setRewriteParagraph(paragraph);
               }}
             >
-              修改这一段
+              {canRewrite ? "修改这一段" : "升级后可重写"}
             </button>
             <p>{paragraph.content}</p>
             <span className="paragraph-meta">第 {paragraph.position} 段 · 重写 {paragraph.rewrite_count} 次</span>
@@ -167,6 +184,7 @@ export function DocumentReader({
         <RewriteDialog
           paragraph={rewriteParagraph}
           busy={isRewriting}
+          paragraphRewritePoints={paragraphRewritePoints ?? null}
           onClose={() => {
             if (!isRewriting) {
               setRewriteParagraph(null);

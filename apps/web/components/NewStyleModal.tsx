@@ -23,6 +23,8 @@ type NewStyleModalProps = {
   onUpload: (files: FileList) => void;
   onConfirm: () => void;
   onClose: () => void;
+  /** 本次风格分析将消耗的积分；为 null 时不展示（如配额未加载）。 */
+  styleAnalysisPoints?: number | null;
 };
 
 export function NewStyleModal(props: NewStyleModalProps) {
@@ -43,6 +45,7 @@ export function NewStyleModal(props: NewStyleModalProps) {
     onUpload,
     onConfirm,
     onClose,
+    styleAnalysisPoints,
   } = props;
 
   const { requireAuth } = useAuth();
@@ -215,7 +218,9 @@ export function NewStyleModal(props: NewStyleModalProps) {
                 onClick={handleUploadClick}
                 style={{ marginTop: "16px", width: "100%" }}
               >
-                {isUploading ? "正在上传解析……" : isAnalyzing ? "正在分析风格……" : "开始分析"}
+                {isUploading ? "正在上传解析……" : isAnalyzing ? "正在分析风格……" : (
+                  <>开始分析{styleAnalysisPoints != null ? <span className="btn-cost"> · 消耗{styleAnalysisPoints}积分</span> : null}</>
+                )}
               </button>
             </div>
           )}

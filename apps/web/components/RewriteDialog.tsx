@@ -6,12 +6,14 @@ import type { DocumentParagraph } from "@/lib/types";
 type RewriteDialogProps = {
   paragraph: DocumentParagraph;
   busy: boolean;
+  /** 本次 AI 重写将消耗的积分；为 null 时不展示（如配额未加载）。 */
+  paragraphRewritePoints?: number | null;
   onClose: () => void;
   onRewrite: (instruction: string) => Promise<string>;
   onOverwrite: (newContent: string) => Promise<void>;
 };
 
-export function RewriteDialog({ paragraph, busy, onClose, onRewrite, onOverwrite }: RewriteDialogProps) {
+export function RewriteDialog({ paragraph, busy, paragraphRewritePoints = null, onClose, onRewrite, onOverwrite }: RewriteDialogProps) {
   const originalContent = paragraph.content;
   const [editText, setEditText] = useState(originalContent);
   const [instruction, setInstruction] = useState("");
@@ -129,7 +131,9 @@ export function RewriteDialog({ paragraph, busy, onClose, onRewrite, onOverwrite
             disabled={!canRewrite}
             onClick={handleRewrite}
           >
-            {busy ? "正在重写……" : "AI重写"}
+            {busy ? "正在重写……" : (
+              <>AI重写{paragraphRewritePoints != null ? <span className="btn-cost"> · 消耗{paragraphRewritePoints}积分</span> : null}</>
+            )}
           </button>
           <button
             className="btn btn-primary"
