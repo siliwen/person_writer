@@ -245,6 +245,12 @@ function WorkspaceInner() {
   function handleStartWriting(styleId: string) {
     setSelectedStyleId(styleId);
     setCurrentView("writing");
+    // 从风格库（我的风格/推荐风格）进入写作页时，清空上次生成的文章，
+    // 避免右侧仍显示旧文章内容。
+    setDocument(null);
+    setEvaluation(null);
+    setGenerationCount(0);
+    setWritingError("");
     setStatus("已选择风格，可以开始写作。");
   }
 
