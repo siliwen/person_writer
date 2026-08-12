@@ -194,7 +194,7 @@ export function StylesView(props: StylesViewProps) {
         {recommendedStyles.length === 0 ? (
           <p className="styles-section-hint">推荐风格正在准备中，上线后可直接引用进行写作</p>
         ) : (
-          <div className="style-card-grid">
+          <div className="style-card-grid style-card-grid-recommended">
             {recommendedStyles.map((style, idx) => (
               <div key={style.id} className="style-card style-card-clickable">
                 <div className={`style-card-bar ${barColors[(ownStyles.length + idx) % 3]}`} />

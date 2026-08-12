@@ -1355,6 +1355,27 @@ a {
   gap: 16px;
 }
 
+.style-card-grid-recommended {
+  grid-template-columns: repeat(auto-fill, 150px);
+}
+
+.style-card-grid-recommended > .style-card {
+  width: 150px;
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
+.style-card-grid-recommended > .style-card > .style-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.style-card-grid-recommended .style-card-main {
+  flex: 1 1 auto;
+}
+
 .style-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-strong);
@@ -2668,6 +2689,16 @@ a {
 
   .recommended-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .style-card-grid-recommended {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .style-card-grid-recommended > .style-card {
+    width: auto;
+    height: auto;
+    aspect-ratio: 1 / 1;
   }
 
   .modal-dialog.new-style-modal {
