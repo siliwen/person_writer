@@ -223,7 +223,8 @@ def delete_style_profile(db: Session, *, user_id: str, style_profile_id: str) ->
 
 def get_active_style(db: Session, *, user_id: str, style_profile_id: str) -> models.StyleProfile:
     style = db.get(models.StyleProfile, style_profile_id)
-    if not style or style.user_id != user_id:
+    # 用户可使用自己的 active 风格，也可使用系统推荐风格。
+    if not style or (style.user_id != user_id and not style.is_recommended):
         raise HTTPException(status_code=404, detail="style profile not found")
     if style.status != "active":
         raise HTTPException(status_code=409, detail="style profile is not active")
@@ -276,6 +277,8 @@ def set_default_style_profile(
     style_profile_id: str,
 ) -> models.StyleProfile:
     style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
+    if style.is_recommended:
+        raise HTTPException(status_code=400, detail="推荐风格不能设为默认")
     if style.is_default:
         return style
     db.query(models.StyleProfile).filter(

@@ -617,6 +617,72 @@ def test_writing_task_sends_style_intensity_to_model_prompt(monkeypatch) -> None
     assert "避免让结果像替换内容后的改写稿" in captured_user_prompt
 
 
+def test_user_can_write_with_recommended_style() -> None:
+    """推荐风格对所有用户可见，普通用户应能使用推荐风格生成文章。"""
+    from app import models
+    from app.database import SessionLocal
+
+    # 用户 A 创建并确认一个风格
+    client_a = TestClient(app)
+    _ensure_logged_in(client_a)
+    _grant_paid_features(client_a)
+    me_a = client_a.get("/v1/me").json()
+
+    material_id = _upload_material(client_a, "recommended-source.txt", "门口有一把旧椅子。\n\n风从巷子里过来。")
+    job = client_a.post("/v1/style-analysis-jobs", json={"material_ids": [material_id]}).json()
+    style = client_a.post(
+        "/v1/style-profiles/confirm",
+        json={"job_id": job["id"], "name": "推荐散文风格", "profile": job["draft_profile"]},
+    ).json()
+
+    # 将用户 A 提权为管理员，并把该风格设为推荐
+    with SessionLocal() as db:
+        admin_user = db.get(models.User, me_a["user_id"])
+        admin_user.is_admin = True
+        db.commit()
+
+    recommend_response = client_a.patch(
+        f"/v1/admin/style-profiles/{style['id']}/recommend",
+        json={"is_recommended": True},
+    )
+    assert recommend_response.status_code == 200
+    assert recommend_response.json()["is_recommended"] is True
+
+    # 用户 B 登录并查看风格库，应能看到推荐风格
+    client_b = TestClient(app)
+    _ensure_logged_in(client_b)
+    _grant_paid_features(client_b)
+
+    styles_response = client_b.get("/v1/style-profiles")
+    assert styles_response.status_code == 200
+    styles = styles_response.json()["styles"]
+    recommended = next((s for s in styles if s["is_recommended"]), None)
+    assert recommended is not None
+    assert recommended["id"] == style["id"]
+
+    # 用户 B 使用推荐风格写作应成功
+    writing_response = client_b.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": recommended["id"],
+            "requested_mode": "style_prompt_only",
+            "task": {
+                "genre": "散文",
+                "title": "推荐风格测试",
+                "brief": "用推荐风格写一篇文章",
+                "target_length": "800字",
+                "target_reader": "普通读者",
+                "must_include": "",
+                "must_avoid": "",
+            },
+        },
+    )
+    assert writing_response.status_code == 200
+    writing = writing_response.json()
+    assert writing["status"] == "completed"
+    assert writing["document"]["style_profile_id"] == recommended["id"]
+
+
 def test_preview_rewrite_does_not_modify_original_document(monkeypatch) -> None:
     _force_gateway_fallback(monkeypatch)
     client = TestClient(app)
