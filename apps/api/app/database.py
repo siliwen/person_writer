@@ -55,6 +55,7 @@ def init_db(*, drop_existing: bool = False) -> None:
         _ensure_sqlite_style_columns()
         _ensure_sqlite_writing_task_columns()
     _seed_membership_data()
+    _seed_admin_user()
 
 
 def _ensure_sqlite_auth_columns() -> None:
@@ -253,3 +254,76 @@ def _seed_membership_data(session_factory=SessionLocal) -> None:
                 user.quota_period_end = now + timedelta(days=30)
 
         db.commit()
+
+
+def _seed_admin_user() -> None:
+    """默认超管引导：仅当配置了 ADMIN_USERNAME + ADMIN_PASSWORD 且库内尚无超管时创建。
+
+    读取顺序：环境变量 ADMIN_USERNAME/ADMIN_PASSWORD → 其次 .env.local（与 model_gateway 同款解析）。
+    不读取 DATABASE_URL，避免改变本地/线上库路径行为。
+    已有超管（或已存在该用户名）则跳过，绝不覆盖。
+    """
+    from sqlalchemy import func, select
+
+    from app import models
+    from app.core.auth_service import (
+        hash_password,
+        normalize_username,
+        validate_password,
+        validate_username,
+    )
+    from app.core.points_service import assign_default_tier
+
+    username = os.getenv("ADMIN_USERNAME")
+    password = os.getenv("ADMIN_PASSWORD")
+    if not username or not password:
+        try:
+            from app.core.model_gateway import _load_env_file
+
+            envf = _load_env_file()
+            username = username or envf.get("ADMIN_USERNAME")
+            password = password or envf.get("ADMIN_PASSWORD")
+        except Exception:
+            pass
+    if not username or not password:
+        return  # 未配置：保留现有行为（本地开发用 make_admin.py 提权）
+
+    with SessionLocal() as db:
+        admin_count = db.scalar(
+            select(func.count()).select_from(models.User).where(models.User.is_admin.is_(True))
+        )
+        if admin_count:
+            return  # 已有超管，不重复创建
+
+        existing = db.scalar(
+            select(models.User).where(models.User.username_normalized == normalize_username(username))
+        )
+        if existing:
+            if not existing.is_admin:
+                existing.is_admin = True
+                db.commit()
+                print(f"[init_db] 已将现有账号设为超管：{username}")
+            return
+
+        try:
+            valid_username = validate_username(username)
+            validate_password(password)
+        except Exception as exc:  # noqa: BLE001
+            detail = getattr(exc, "detail", None) or str(exc)
+            print(f"[init_db] 跳过默认超管创建（账号/密码不符合规则）：{detail}")
+            return
+
+        user = models.User(
+            id=models.new_id("user"),
+            username=valid_username,
+            username_normalized=normalize_username(valid_username),
+            display_name=valid_username,
+            password_hash=hash_password(password),
+            mode="user",
+            is_admin=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assign_default_tier(db, user)
+        print(f"[init_db] 已创建默认超管账号：{username}（请用该账号登录后台）")

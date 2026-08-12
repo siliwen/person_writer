@@ -45,8 +45,9 @@ sudo bash /root/ec2-deploy.sh
 
 ### C. 验证
 - 浏览器打开 `https://moxx.cn`，应看到纸墨主题首页
-- 注册一个账号 → 写文章测试后端连通
-- 提权后台管理员（在 ECS 上）：
+- 部署脚本在首次启动时会**自动创建默认超管账号**（用户名/密码见脚本末尾输出），直接用该账号登录后台即可
+- 如需更换超管账号，重跑前在环境变量设 `ADMIN_USERNAME` / `ADMIN_PASSWORD`；已有超管不会被覆盖
+- 旧方式（手动提权）仍可用，仅当未配置 ADMIN_* 时备用：
   ```bash
   cd /opt/moxx/apps/api
   .venv/bin/python scripts/make_admin.py <你的用户名>
