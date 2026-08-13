@@ -7,6 +7,21 @@
 2. 通义千问 API Key（DashScope），或 OpenAI 兼容 key
 3. Let's Encrypt 用的邮箱（任意有效邮箱）
 
+## 0. 生成本地部署包（moxx-deploy.tar.gz）
+
+在本地项目根目录执行：
+
+```bash
+bash scripts/make-deploy-package.sh
+```
+
+脚本**仅打包运行所需**：`apps/`、`package.json`、`package-lock.json`、`scripts/`、`.env.example`、`README.md`；
+自动排除一切过程文件（`00~09_` 文档文件夹、测评集、eval_sets、references、design-preview、outputs、tools）、
+依赖（`node_modules`/`.venv`/`.next`）、密钥（`.env.local`）与数据库（`*.db`）。
+生成 `moxx-deploy.tar.gz` 后，按下方「方式一」上传即可。
+
+> ⚠️ 不要用 `git archive` 或裸 `tar` 直接打包根目录，否则会把 PRD/需求/产品设计等过程文件和非运行依赖一起带进生产包。
+
 ## 步骤
 
 > 两种代码来源（二选一）：
