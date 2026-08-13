@@ -614,7 +614,7 @@ def test_writing_task_sends_style_intensity_to_model_prompt(monkeypatch) -> None
 
     assert response.status_code == 200
     assert "风格贴近程度：高度贴近" in captured_user_prompt
-    assert "避免让结果像替换内容后的改写稿" in captured_user_prompt
+    assert "不是把原文替换内容后的改写稿" in captured_user_prompt
 
 
 def test_user_can_write_with_recommended_style() -> None:

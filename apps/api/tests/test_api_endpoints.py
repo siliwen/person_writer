@@ -89,5 +89,5 @@ def test_compose_prompt_accepts_style_intensity_and_anti_copy_rules() -> None:
     assert response.status_code == 200
     user_prompt = response.json()["messages"][1]["content"]
     assert "风格贴近程度：轻度参考" in user_prompt
-    assert "只参考语气、节奏和观察方式" in user_prompt
+    assert "语气、节奏、句式结构" in user_prompt
     assert "不要照搬原文人物、地名、事件、固定意象组合或标志性表达" in user_prompt
