@@ -18,6 +18,7 @@ export type StyleProfile = {
   id: string;
   user_id: string;
   name: string;
+  description?: string | null;
   status: string;
   profile: Record<string, unknown>;
   is_default: boolean;
@@ -160,6 +161,7 @@ export type AdminStyle = {
   id: string;
   user_id: string;
   name: string;
+  description?: string | null;
   status: string;
   is_recommended: boolean;
   created_at: string;

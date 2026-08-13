@@ -9,8 +9,9 @@ import { AdminUsage } from "./AdminUsage";
 import { AdminAudit } from "./AdminAudit";
 import { AdminRecommended } from "./AdminRecommended";
 import { AdminMessages } from "./AdminMessages";
+import { AdminPromptTemplates } from "./AdminPromptTemplates";
 
-type AdminTab = "dashboard" | "users" | "config" | "usage" | "audit" | "recommend" | "messages";
+type AdminTab = "dashboard" | "users" | "config" | "usage" | "audit" | "recommend" | "messages" | "prompt";
 
 const adminTabs: Array<{ key: AdminTab; label: string }> = [
   { key: "dashboard", label: "概览" },
@@ -20,6 +21,7 @@ const adminTabs: Array<{ key: AdminTab; label: string }> = [
   { key: "audit", label: "操作审计" },
   { key: "recommend", label: "推荐风格" },
   { key: "messages", label: "消息中心" },
+  { key: "prompt", label: "提示词模板" },
 ];
 
 type AdminPanelProps = {
@@ -64,6 +66,7 @@ export function AdminPanel({ onNewStyle }: AdminPanelProps) {
         {tab === "audit" ? <AdminAudit /> : null}
         {tab === "recommend" ? <AdminRecommended onNewStyle={onNewStyle ?? (() => {})} /> : null}
         {tab === "messages" ? <AdminMessages /> : null}
+        {tab === "prompt" ? <AdminPromptTemplates /> : null}
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ from app.core.auth_service import (
 from app.core import points_service
 from app.core.points_service import (
     ARTICLE_GENERATION,
+    OPTIMIZE_PROMPT,
     PARAGRAPH_REWRITE,
     STYLE_ANALYSIS,
     charge,
@@ -41,6 +42,7 @@ from app.core.model_gateway import ModelGateway
 from app.core.mvp_service import (
     DEMO_USER_ID,
     confirm_style_profile,
+    create_free_writing,
     create_material,
     create_style_analysis_job,
     create_writing,
@@ -61,6 +63,9 @@ from app.core.mvp_service import (
 from app.core import message_service
 from app.core import evaluation_service
 from app.core.prompt_composer import WritingTaskInput, compose_prompt
+from app.core import prompt_template_service
+from app.core.prompt_template_service import DEFAULT_OPTIMIZE_PROMPT
+from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
 from app.core.task_service import InMemoryWritingTaskService
 from app.core.text_parser import extract_upload_text
 from app.database import get_db, init_db
@@ -137,6 +142,10 @@ class CreateWritingTaskRequest(BaseModel):
     task: WritingTaskPayload
 
 
+class OptimizePromptRequest(BaseModel):
+    prompt: str
+
+
 class CreateStyleAnalysisJobRequest(BaseModel):
     material_ids: list[str]
 
@@ -149,6 +158,7 @@ class ConfirmStyleProfileRequest(BaseModel):
 
 class UpdateStyleProfileRequest(BaseModel):
     name: str
+    description: str | None = None
     profile: dict[str, Any] | None = None
     is_recommended: bool | None = None
 
@@ -459,6 +469,7 @@ def update_style(
         user_id=user.id,
         style_profile_id=style_profile_id,
         name=request.name,
+        description=request.description,
         profile=request.profile,
         is_recommended=request.is_recommended,
         is_admin=user.is_admin,
@@ -496,6 +507,42 @@ def compose_prompt_endpoint(request: ComposePromptRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/v1/optimize-prompt")
+def optimize_prompt(
+    request: OptimizePromptRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """优化用户提示词：用后台可配置的 system prompt + 用户原文调用大模型，返回扩展后的需求文本。
+
+    固定扣 1 积分；模型失败时回退返回原文，不阻断用户后续生成。
+    """
+    source = (request.prompt or "").strip()
+    if not source:
+        raise HTTPException(status_code=400, detail="请输入要优化的提示词。")
+    points = validate_and_price(db, user, OPTIMIZE_PROMPT)
+    template = prompt_template_service.get_active_prompt_template(db, "optimize_prompt")
+    system_prompt = template.system_prompt if template else DEFAULT_OPTIMIZE_PROMPT
+    model_result = ModelGateway().generate(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": source},
+        ],
+        purpose="optimize_prompt",
+        fallback=source,
+    )
+    charge(
+        db,
+        user,
+        OPTIMIZE_PROMPT,
+        points,
+        input_tokens=model_result.input_token_count,
+        output_tokens=model_result.output_token_count,
+        model_name=model_result.model_name,
+    )
+    return {"optimized_prompt": model_result.content}
+
+
 @app.post("/v1/writing-tasks")
 def create_writing_task(
     request: CreateWritingTaskRequest,
@@ -528,6 +575,30 @@ def create_writing_task(
         if auto is not None:
             body["evaluation"] = auto
         return body
+
+    if request.style_profile_id == "":
+        # 自由写作（无风格生成）：不绑定用户风格档案，走通用写作要求。
+        target_chars = parse_target_length_chars(request.task.target_length)
+        points = validate_and_price(db, user, ARTICLE_GENERATION, target_chars=target_chars)
+        created = create_free_writing(
+            db,
+            user_id=user.id,
+            task_input=request.task.to_domain(),
+            requested_mode=request.requested_mode,
+            rag_snippets=request.rag_snippets,
+        )
+        charge(
+            db,
+            user,
+            ARTICLE_GENERATION,
+            points,
+            document_id=created.document.id,
+            input_tokens=created.task.input_token_count,
+            output_tokens=created.task.output_token_count,
+            model_name=created.task.model_name,
+        )
+        # 自由写作暂不鉴评
+        return writing_task_to_dict(created.task, document=created.document)
 
     if request.style_profile:
         created_legacy = task_service.create_task(
@@ -591,6 +662,9 @@ def _run_auto_evaluation(
     document: models.Document,
 ) -> dict[str, Any] | None:
     """散文生成完成后自动鉴评并推送系统通知。失败不影响主流程。"""
+    # 自由写作（无风格生成）暂不鉴评：无风格基准，鉴评量规无法判定风格契合。
+    if task.style_profile_id == SYSTEM_FREE_WRITE_STYLE_ID:
+        return None
     if not evaluation_service.is_supported_genre(document.genre):
         return None
     try:
@@ -636,6 +710,11 @@ def evaluate_writing_task(
     document = db.get(models.Document, task.document_id) if task.document_id else None
     if document is None:
         raise HTTPException(status_code=404, detail="document not found")
+    if document.style_profile_id == SYSTEM_FREE_WRITE_STYLE_ID:
+        raise HTTPException(
+            status_code=422,
+            detail="自由写作文章暂不支持鉴评（无风格基准）。",
+        )
     if not evaluation_service.is_supported_genre(document.genre):
         raise HTTPException(
             status_code=422,
@@ -916,6 +995,7 @@ def style_profile_to_dict(style: models.StyleProfile) -> dict[str, Any]:
         "id": style.id,
         "user_id": style.user_id,
         "name": style.name,
+        "description": style.description,
         "status": style.status,
         "profile": style.profile,
         "is_default": style.is_default,

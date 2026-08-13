@@ -13,6 +13,7 @@ from app import models
 ARTICLE_GENERATION = "article_generation"
 STYLE_ANALYSIS = "style_analysis"
 PARAGRAPH_REWRITE = "paragraph_rewrite"
+OPTIMIZE_PROMPT = "optimize_prompt"
 
 QUOTA_PERIOD_DAYS = 30
 

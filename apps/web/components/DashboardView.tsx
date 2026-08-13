@@ -1,6 +1,7 @@
 "use client";
 
-import type { CurrentUser, Material, StyleProfile, WritingDocument, ViewName } from "@/lib/types";
+import type { CurrentUser, Material, QuotaView, StyleProfile, WritingDocument, ViewName } from "@/lib/types";
+import { FreeWriteBox, type FreeWritePayload } from "./FreeWriteBox";
 
 type DashboardViewProps = {
   currentUser: CurrentUser | null;
@@ -8,8 +9,11 @@ type DashboardViewProps = {
   styles: StyleProfile[];
   savedDocuments: WritingDocument[];
   generationCount: number;
+  quota: QuotaView | null;
+  generating: boolean;
   onNavigate: (view: ViewName) => void;
   onOpenDocument: (doc: WritingDocument) => void;
+  onFreeWrite: (payload: FreeWritePayload) => void;
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -23,8 +27,11 @@ export function DashboardView({
   styles,
   savedDocuments,
   generationCount,
+  quota,
+  generating,
   onNavigate,
   onOpenDocument,
+  onFreeWrite,
 }: DashboardViewProps) {
   const displayName = currentUser?.display_name || currentUser?.username || "写作者";
   const isLoggedIn = !!currentUser;
@@ -53,6 +60,8 @@ export function DashboardView({
         <h1 className="dashboard-title">欢迎回来，{displayName}</h1>
         <p className="dashboard-subtitle">这是你的个人写作工作台概览。</p>
       </header>
+
+      <FreeWriteBox quota={quota} styles={styles} generating={generating} onFreeWrite={onFreeWrite} />
 
       <section className="metric-grid">
         <div className="metric-card">

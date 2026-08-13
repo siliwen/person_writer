@@ -7,6 +7,8 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
+
 
 DEFAULT_DATABASE_URL = "sqlite+pysqlite:///./personal_writing_agent_mvp1.db"
 
@@ -56,6 +58,8 @@ def init_db(*, drop_existing: bool = False) -> None:
         _ensure_sqlite_writing_task_columns()
     _seed_membership_data()
     _seed_admin_user()
+    _seed_system_styles()
+    _seed_prompt_templates()
 
 
 def _ensure_sqlite_auth_columns() -> None:
@@ -119,6 +123,7 @@ def _ensure_sqlite_style_columns() -> None:
     existing_columns = {column["name"] for column in inspector.get_columns("style_profiles")}
     required_columns = {
         "is_recommended": "BOOLEAN DEFAULT 0",
+        "description": "VARCHAR(255)",
     }
     with engine.begin() as connection:
         for name, definition in required_columns.items():
@@ -174,6 +179,7 @@ DEFAULT_OPERATION_COSTS = [
     {"id": "op_paragraph_rewrite", "op_type": "paragraph_rewrite", "points": 1, "description": "段落重写"},
     # 首版暂免费（points=0），预留开关：改为 >0 即可开始计费
     {"id": "op_article_evaluate", "op_type": "article_evaluate", "points": 0, "description": "文章鉴评（按文体量规评分点评）"},
+    {"id": "op_optimize_prompt", "op_type": "optimize_prompt", "points": 1, "description": "优化提示词（将简短想法扩展为完整写作需求）"},
 ]
 
 DEFAULT_MODEL_PRICING = [
@@ -327,3 +333,52 @@ def _seed_admin_user() -> None:
         db.refresh(user)
         assign_default_tier(db, user)
         print(f"[init_db] 已创建默认超管账号：{username}（请用该账号登录后台）")
+
+
+def _seed_system_styles() -> None:
+    """确保存在一个系统占位风格档案，供自由写作（无风格生成）文档挂载。
+
+    这样 documents.style_profile_id 仍满足 NOT NULL，无需对既有表做 DROP NOT NULL 重建；
+    鉴评逻辑据此识别「无风格」文章并跳过。系统风格不设为推荐，也不会出现在普通用户的风格库。
+    """
+    from sqlalchemy import select
+
+    from app import models
+
+    with SessionLocal() as db:
+        existing = db.get(models.StyleProfile, SYSTEM_FREE_WRITE_STYLE_ID)
+        if existing is not None:
+            return
+        # StyleProfile.user_id 为外键，需要一个已存在的用户；优先取首个管理员，否则取任意用户。
+        owner = db.scalar(
+            select(models.User).where(models.User.is_admin.is_(True)).order_by(models.User.created_at).limit(1)
+        )
+        if owner is None:
+            owner = db.scalar(select(models.User).order_by(models.User.created_at).limit(1))
+        if owner is None:
+            return  # 尚无任何用户，跳过（首次空库启动时下次启动再补）
+        style = models.StyleProfile(
+            id=SYSTEM_FREE_WRITE_STYLE_ID,
+            user_id=owner.id,
+            name="自由写作(系统)",
+            status="active",
+            profile={
+                "note": "系统占位风格，用于自由写作（无风格生成）文档挂载，不代表任何用户真实文风。",
+                "voice": "通用写作语气",
+                "tone": "中性克制",
+            },
+            is_recommended=False,
+            is_default=False,
+        )
+        db.add(style)
+        db.commit()
+        print(f"[init_db] 已创建系统占位风格：{SYSTEM_FREE_WRITE_STYLE_ID}")
+
+
+def _seed_prompt_templates() -> None:
+    """确保存在一个启用的 optimize_prompt 提示词模板（后台可编辑，无则写入兜底内容）。"""
+    from app.core import prompt_template_service
+
+    with SessionLocal() as db:
+        prompt_template_service.ensure_default_optimize_template(db)
+

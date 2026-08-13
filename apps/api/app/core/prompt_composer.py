@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.generation_policy import GenerationMode, resolve_generation_policy
+from app.core.prompt_template_service import DEFAULT_FREE_WRITE_PROMPT
 
 
 @dataclass(frozen=True)
@@ -157,3 +158,48 @@ def _no_copy_line(style_intensity: str) -> str:
             "其余原文痕迹仍须避开，不得照搬其余原文人物、地名、事件或固定意象组合。"
         )
     return "可继承的是抽象风格特征；必须避开原文痕迹。不要照搬原文人物、地名、事件、固定意象组合或标志性表达。"
+
+
+def compose_free_prompt(
+    *,
+    task: WritingTaskInput,
+) -> ComposedPrompt:
+    """自由写作（无风格生成）的提示词拼装。
+
+    不绑定任何用户风格档案：system_prompt 使用通用写作要求（可由后台覆盖的
+    DEFAULT_FREE_WRITE_PROMPT 同款语义），user_prompt 仅携带本次写作任务要素。
+    """
+    policy = resolve_generation_policy(
+        genre=task.genre,
+        requested_mode=GenerationMode.STYLE_PROMPT_ONLY,
+    )
+    system_prompt = DEFAULT_FREE_WRITE_PROMPT
+    user_parts = [
+        "## 写作任务",
+        f"- 任务类型：{task.task_type}",
+        f"- 文体：{task.genre}",
+        f"- 标题/主题：{task.title}",
+        f"- 需求：{task.brief}",
+        f"- 目标长度：{task.target_length}",
+        f"- 目标读者：{task.target_reader}",
+        f"- 必须包含：{task.must_include}",
+        f"- 必须避免：{task.must_avoid}",
+        f"- 评测重点：{task.eval_focus}",
+        "",
+        "## 通用写作要求",
+        "严格按指定文体写作，不要混用其他文体特征。",
+        "避免 AI 常见套话、空泛抒情和宏大口号。",
+        "使用自然段组织内容，保持可编辑性。",
+        "只输出正文，不要解释 prompt、不要列提纲。",
+        "",
+        "## 输出要求",
+        "只输出正文。不要解释 prompt、不要列提纲、不要声明自己在模仿风格。",
+    ]
+    return ComposedPrompt(
+        mode=policy.mode,
+        rag_enabled=False,
+        system_prompt=system_prompt,
+        user_prompt="\n".join(user_parts),
+        prompt_version="free_write_v1",
+        policy_reason="自由写作：不绑定用户风格档案，按通用写作要求生成",
+    )

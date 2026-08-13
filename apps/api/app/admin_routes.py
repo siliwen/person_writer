@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.core import message_service
+from app.core import prompt_template_service
 from app.core.auth_service import current_user_from_request
+from app.core.constants import PURPOSE_OPTIMIZE_PROMPT
 from app.database import get_db
 from app.models import new_id, utc_now
 
@@ -901,6 +903,7 @@ def _style_admin_dict(s: models.StyleProfile) -> dict[str, Any]:
         "id": s.id,
         "user_id": s.user_id,
         "name": s.name,
+        "description": s.description,
         "status": s.status,
         "is_recommended": s.is_recommended,
         "created_at": s.created_at.isoformat(),
@@ -950,3 +953,123 @@ def _apply_opcost(c: models.OperationCost, p: OperationCostPayload, *, partial: 
 
 def _apply_price(p: models.ModelPricing, payload: ModelPricingPayload, *, partial: bool = False) -> None:
     _apply_fields(p, payload, _PRICE_FIELDS, partial=partial)
+
+
+# ---------- 提示词模板（后台当前仅管理 optimize_prompt 用途） ----------
+class PromptTemplateCreatePayload(BaseModel):
+    name: str
+    system_prompt: str
+    is_active: bool = True
+
+
+class PromptTemplateUpdatePayload(BaseModel):
+    name: str | None = None
+    system_prompt: str | None = None
+    is_active: bool | None = None
+
+
+@router.get("/prompt-templates")
+def list_prompt_templates(
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rows = prompt_template_service.list_prompt_templates(db, purpose=PURPOSE_OPTIMIZE_PROMPT)
+    return {"items": [_prompt_template_dict(r) for r in rows]}
+
+
+@router.post("/prompt-templates")
+def create_prompt_template_endpoint(
+    payload: PromptTemplateCreatePayload,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    # 后台只暴露 optimize_prompt 用途：purpose 由服务端固定，不接受前端覆盖。
+    try:
+        template = prompt_template_service.create_prompt_template(
+            db,
+            name=payload.name,
+            purpose=PURPOSE_OPTIMIZE_PROMPT,
+            system_prompt=payload.system_prompt,
+            is_active=payload.is_active,
+        )
+    except prompt_template_service.PromptTemplateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    log_admin_action(db, admin, "create", "prompt_template", template.id, after=_prompt_template_dict(template))
+    return _prompt_template_dict(template)
+
+
+@router.get("/prompt-templates/{template_id}")
+def get_prompt_template_endpoint(
+    template_id: str,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        template = prompt_template_service.get_prompt_template(db, template_id)
+    except prompt_template_service.PromptTemplateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return _prompt_template_dict(template)
+
+
+@router.patch("/prompt-templates/{template_id}")
+def update_prompt_template_endpoint(
+    template_id: str,
+    payload: PromptTemplateUpdatePayload,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        before = _prompt_template_dict(prompt_template_service.get_prompt_template(db, template_id))
+        template = prompt_template_service.update_prompt_template(
+            db,
+            template_id,
+            name=payload.name,
+            system_prompt=payload.system_prompt,
+            is_active=payload.is_active,
+        )
+    except prompt_template_service.PromptTemplateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    log_admin_action(
+        db, admin, "update", "prompt_template", template_id, before=before, after=_prompt_template_dict(template)
+    )
+    return _prompt_template_dict(template)
+
+
+@router.delete("/prompt-templates/{template_id}")
+def delete_prompt_template_endpoint(
+    template_id: str,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    try:
+        prompt_template_service.delete_prompt_template(db, template_id)
+    except prompt_template_service.PromptTemplateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    log_admin_action(db, admin, "delete", "prompt_template", template_id)
+    return {"status": "ok"}
+
+
+@router.post("/prompt-templates/{template_id}/set-active")
+def set_active_prompt_template_endpoint(
+    template_id: str,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        template = prompt_template_service.set_active_prompt_template(db, template_id)
+    except prompt_template_service.PromptTemplateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    log_admin_action(db, admin, "set_active", "prompt_template", template_id, after={"is_active": True})
+    return _prompt_template_dict(template)
+
+
+def _prompt_template_dict(t: models.PromptTemplate) -> dict[str, Any]:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "purpose": t.purpose,
+        "system_prompt": t.system_prompt,
+        "is_active": bool(t.is_active),
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }

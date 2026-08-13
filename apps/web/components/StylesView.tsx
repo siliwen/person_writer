@@ -215,32 +215,9 @@ export function StylesView(props: StylesViewProps) {
                       <span className="style-card-name">{style.name}</span>
                       <span className="style-card-badge recommended">推荐</span>
                     </div>
-                    <div className="style-card-desc">点击开始写作</div>
-                    <div className="style-card-stats">
-                      <span>状态 <strong>可用</strong></span>
-                    </div>
+                    <div className="style-card-desc">{style.description || "暂无介绍"}</div>
                     <div className="style-card-cta">开始写作 →</div>
                   </div>
-                  {canManageOwn && style.user_id === currentUser?.user_id ? (
-                    <div className="style-card-actions">
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleEdit(style.id)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        type="button"
-                        disabled={isDeleting}
-                        onClick={() => handleDelete(style.id)}
-                      >
-                        {isDeleting ? "删除中……" : "删除"}
-                      </button>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             ))}

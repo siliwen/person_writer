@@ -12,6 +12,7 @@ type WritingViewProps = {
   styles: StyleProfile[];
   selectedStyleId: string;
   quota: QuotaView | null;
+  freeWriteMode?: boolean;
   onSelectStyle: (id: string) => void;
   document: WritingDocument | null;
   generationCount: number;
@@ -49,6 +50,7 @@ export function WritingView({
   styles,
   selectedStyleId,
   quota,
+  freeWriteMode = false,
   onSelectStyle,
   document: doc,
   generationCount,
@@ -99,10 +101,10 @@ export function WritingView({
 
   function handleGenerate() {
     if (!requireAuth()) return;
-    if (!selectedStyleId) return;
+    if (!freeWriteMode && !selectedStyleId) return;
     if (estimate?.blocked) return; // 由下方按钮 disabled 与提示兜底，这里再保险一次
     onGenerate({
-      styleProfileId: selectedStyleId,
+      styleProfileId: freeWriteMode ? "" : selectedStyleId,
       genre: writingGenre,
       title: title.trim(),
       brief: brief.trim(),
@@ -132,12 +134,14 @@ export function WritingView({
             <h2 className="card-title">写作参数</h2>
             {selectedStyle ? (
               <span className="badge badge-accent">风格：{selectedStyle.name}</span>
+            ) : freeWriteMode ? (
+              <span className="badge badge-neutral">自由写作（无风格）</span>
             ) : (
               <span className="badge badge-neutral">未选择风格</span>
             )}
           </div>
 
-          {styles.length === 0 ? (
+          {styles.length === 0 && !freeWriteMode ? (
             <div className="empty-state" style={{ marginBottom: "16px" }}>
               <div className="empty-state-title">请先创建或选择一个风格</div>
               <div className="empty-state-desc">在风格库页面上传作品并保存风格后，即可开始写作</div>
@@ -150,7 +154,7 @@ export function WritingView({
                 value={selectedStyleId}
                 onChange={(e) => onSelectStyle(e.target.value)}
               >
-                <option value="">请选择已确认风格</option>
+                <option value="">{freeWriteMode ? "自由写作" : "请选择已确认风格"}</option>
                 {styles.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -172,13 +176,15 @@ export function WritingView({
                 placeholder="例如：800字、1200字、12行"
               />
             </div>
-            <div className="form-field full">
-              <label className="form-label">风格贴近程度</label>
-              <select className="form-select" value={styleIntensity} onChange={(e) => setStyleIntensity(e.target.value)}>
-                {styleIntensityOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-              <span className="form-hint">默认建议使用"平衡仿写"。如果觉得太像原文，可以改成"轻度参考"。</span>
-            </div>
+            {freeWriteMode ? null : (
+              <div className="form-field full">
+                <label className="form-label">风格贴近程度</label>
+                <select className="form-select" value={styleIntensity} onChange={(e) => setStyleIntensity(e.target.value)}>
+                  {styleIntensityOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+                <span className="form-hint">默认建议使用"平衡仿写"。如果觉得太像原文，可以改成"轻度参考"。</span>
+              </div>
+            )}
             <div className="form-field full">
               <label className="form-label">标题 / 主题</label>
               <input className="form-input" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -200,11 +206,11 @@ export function WritingView({
           <button
             className="btn btn-primary"
             type="button"
-            disabled={busy || !selectedStyleId || !!estimate?.blocked}
+            disabled={busy || (!freeWriteMode && !selectedStyleId) || !!estimate?.blocked}
             onClick={handleGenerate}
           >
             {isWriting ? "正在生成文章……" : (
-              <>按选定风格生成文章{estimate ? <span className="btn-cost"> · 消耗{estimate.points}积分</span> : null}</>
+              <>{freeWriteMode ? "自由写作生成文章" : "按选定风格生成文章"}{estimate ? <span className="btn-cost"> · 消耗{estimate.points}积分</span> : null}</>
             )}
           </button>
 
@@ -240,7 +246,7 @@ export function WritingView({
               evaluation={evaluation}
               loading={evaluationLoading}
               error={evaluationError}
-              supported={EVALUATION_GENRES.includes(doc.genre)}
+              supported={EVALUATION_GENRES.includes(doc.genre) && !freeWriteMode}
               genre={doc.genre}
               onEvaluate={onEvaluate}
             />

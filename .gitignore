@@ -54,3 +54,9 @@ apps/api/*.db.bak_*
 
 # 本地部署包（不入库）
 moxx-deploy.tar.gz
+
+# 本地调试产物（浏览器 dump / 编译 CSS / E2E 临时文件，不入库）
+home.yaml
+outputs/db_find.txt
+outputs/fw_e2e_user.txt
+outputs/layout.css

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AdminStyle } from "@/lib/types";
-import { fetchAdminStyles, setAdminStyleRecommended } from "@/lib/api";
+import { fetchAdminStyles, setAdminStyleRecommended, updateStyleProfile } from "@/lib/api";
 
 type AdminRecommendedProps = {
   onNewStyle: () => void;
@@ -14,6 +14,11 @@ export function AdminRecommended({ onNewStyle }: AdminRecommendedProps) {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [editingStyle, setEditingStyle] = useState<AdminStyle | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +47,41 @@ export function AdminRecommended({ onNewStyle }: AdminRecommendedProps) {
       setError(e instanceof Error ? e.message : "操作失败");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  function openEdit(style: AdminStyle) {
+    setEditingStyle(style);
+    setEditName(style.name);
+    setEditDescription(style.description ?? "");
+    setEditError("");
+  }
+
+  function closeEdit() {
+    if (editBusy) return;
+    setEditingStyle(null);
+  }
+
+  async function saveEdit() {
+    if (!editingStyle) return;
+    const name = editName.trim();
+    if (!name) {
+      setEditError("风格名称不能为空");
+      return;
+    }
+    setEditBusy(true);
+    setEditError("");
+    try {
+      await updateStyleProfile(editingStyle.id, {
+        name,
+        description: editDescription.trim() || null,
+      });
+      await load();
+      setEditingStyle(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setEditBusy(false);
     }
   }
 
@@ -97,22 +137,80 @@ export function AdminRecommended({ onNewStyle }: AdminRecommendedProps) {
                   <span className="style-card-badge recommended">推荐</span>
                 ) : null}
               </div>
-              <button
-                type="button"
-                className={`btn btn-sm ${style.is_recommended ? "btn-ghost" : "btn-primary"}`}
-                disabled={busyId === style.id}
-                onClick={() => toggle(style)}
-              >
-                {busyId === style.id
-                  ? "处理中……"
-                  : style.is_recommended
-                    ? "取消推荐"
-                    : "设为推荐"}
-              </button>
+              <div className="admin-style-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={busyId === style.id}
+                  onClick={() => openEdit(style)}
+                >
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${style.is_recommended ? "btn-ghost" : "btn-primary"}`}
+                  disabled={busyId === style.id}
+                  onClick={() => toggle(style)}
+                >
+                  {busyId === style.id
+                    ? "处理中……"
+                    : style.is_recommended
+                      ? "取消推荐"
+                      : "设为推荐"}
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      {editingStyle ? (
+        <div className="modal-backdrop" onClick={closeEdit}>
+          <div className="modal-dialog admin-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">编辑风格</div>
+              <button className="modal-close" type="button" onClick={closeEdit} aria-label="关闭">×</button>
+            </div>
+            <div className="modal-body">
+              {editError ? <p className="inline-error" role="alert">{editError}</p> : null}
+              <div className="admin-form-grid">
+                <label className="admin-form-field">
+                  <span className="admin-form-label">
+                    风格名称
+                    <span className="admin-required">*</span>
+                  </span>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={editName}
+                    disabled={editBusy}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </label>
+                <label className="admin-form-field">
+                  <span className="admin-form-label">介绍文字</span>
+                  <textarea
+                    className="form-input"
+                    rows={4}
+                    value={editDescription}
+                    disabled={editBusy}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="会显示在推荐风格卡片底部，最多两行"
+                  />
+                </label>
+              </div>
+              <div className="admin-modal-actions">
+                <button className="btn btn-ghost btn-sm" type="button" onClick={closeEdit} disabled={editBusy}>
+                  取消
+                </button>
+                <button className="btn btn-primary btn-sm" type="button" onClick={() => void saveEdit()} disabled={editBusy}>
+                  {editBusy ? "保存中……" : "保存"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

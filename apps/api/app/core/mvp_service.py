@@ -12,9 +12,10 @@ from docx import Document as DocxDocument
 from docx.shared import Pt, RGBColor
 
 from app import models
+from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
 from app.core.generation_policy import GenerationMode
 from app.core.model_gateway import ModelGateway, ModelResult
-from app.core.prompt_composer import WritingTaskInput, compose_prompt
+from app.core.prompt_composer import WritingTaskInput, compose_prompt, compose_free_prompt
 from app.core.style_profile_builder import build_style_profile_v2
 from app.core.text_parser import split_paragraphs
 
@@ -237,6 +238,7 @@ def update_style_profile(
     user_id: str,
     style_profile_id: str,
     name: str,
+    description: str | None = None,
     profile: dict[str, Any] | None,
     is_recommended: bool | None = None,
     is_admin: bool = False,
@@ -256,6 +258,7 @@ def update_style_profile(
     if duplicate:
         raise HTTPException(status_code=409, detail="风格名称已存在，请换一个名称。")
     style.name = normalized_name
+    style.description = description.strip() if description else None
     if profile is not None:
         style.profile = profile
         if isinstance(profile, dict):
@@ -342,6 +345,88 @@ def create_writing(
         id=new_id("task"),
         user_id=user_id,
         style_profile_id=style.id,
+        document_id=document.id,
+        status="completed",
+        genre=task_input.genre,
+        title=task_input.title,
+        brief=task_input.brief,
+        effective_mode=prompt.mode.value,
+        rag_enabled=prompt.rag_enabled,
+        prompt_version=prompt.prompt_version,
+        requirements={
+            "genre": task_input.genre,
+            "task_type": task_input.task_type,
+            "title": task_input.title,
+            "brief": task_input.brief,
+            "target_length": task_input.target_length,
+            "target_reader": task_input.target_reader,
+            "must_include": task_input.must_include,
+            "must_avoid": task_input.must_avoid,
+            "eval_focus": task_input.eval_focus,
+            "style_intensity": task_input.style_intensity,
+        },
+        model_provider=model_result.model_provider,
+        model_name=model_result.model_name,
+        input_token_count=model_result.input_token_count,
+        output_token_count=model_result.output_token_count,
+    )
+    usage = models.ModelUsageLog(
+        id=new_id("usage"),
+        user_id=user_id,
+        purpose="writing",
+        model_provider=model_result.model_provider,
+        model_name=model_result.model_name,
+        input_token_count=model_result.input_token_count,
+        output_token_count=model_result.output_token_count,
+    )
+    db.add_all([document, writing_task, usage])
+    db.commit()
+    db.refresh(document)
+    db.refresh(writing_task)
+    return CreatedWriting(task=writing_task, document=document, model_result=model_result)
+
+
+def create_free_writing(
+    db: Session,
+    *,
+    user_id: str,
+    task_input: WritingTaskInput,
+    requested_mode: GenerationMode | str | None = None,
+    rag_snippets: list[str] | None = None,
+) -> CreatedWriting:
+    """自由写作（无风格生成）：不绑定任何用户风格档案。
+
+    style_profile_id 指向系统占位风格（SYSTEM_FREE_WRITE_STYLE_ID），以满足
+    documents.style_profile_id NOT NULL 约束；鉴评逻辑据此跳过无风格文章。
+    """
+    prompt = compose_free_prompt(task=task_input)
+    fallback = _fallback_article(style_name="自由写作", task=task_input)
+    model_result = ModelGateway().generate(
+        messages=[
+            {"role": "system", "content": prompt.system_prompt},
+            {"role": "user", "content": prompt.user_prompt},
+        ],
+        purpose="writing",
+        fallback=fallback,
+    )
+    paragraphs = split_paragraphs(model_result.content)
+    document = models.Document(
+        id=new_id("doc"),
+        user_id=user_id,
+        style_profile_id=SYSTEM_FREE_WRITE_STYLE_ID,
+        title=task_input.title,
+        genre=task_input.genre,
+        content="\n\n".join(paragraphs),
+        status="completed",
+    )
+    document.paragraphs = [
+        models.DocumentParagraph(id=new_id("dpara"), position=index, content=paragraph)
+        for index, paragraph in enumerate(paragraphs, start=1)
+    ]
+    writing_task = models.WritingTask(
+        id=new_id("task"),
+        user_id=user_id,
+        style_profile_id=SYSTEM_FREE_WRITE_STYLE_ID,
         document_id=document.id,
         status="completed",
         genre=task_input.genre,

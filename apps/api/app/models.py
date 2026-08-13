@@ -4,7 +4,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -116,6 +116,7 @@ class StyleProfile(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     source_job_id: Mapped[str | None] = mapped_column(ForeignKey("style_analysis_jobs.id"))
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -366,3 +367,33 @@ class MessageTemplate(Base):
     channel: Mapped[str] = mapped_column(String(32), nullable=False, default="in_app")  # 预留
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class PromptTemplate(Base):
+    """可后台配置的系统提示词模板（如「优化提示词」）。
+
+    purpose 为业务唯一用途标识；同一 purpose 下至多一个 is_active=1 的模板
+    （由 prompt_template_service 在 set-active 时保证）。迁移 PostgreSQL 时，
+    Boolean / Text / partial unique index 语义一致，无需 schema 改造。
+    """
+
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+# 同一 purpose 下仅允许一个启用模板（partial unique index，SQLite/PG 均支持）。
+Index(
+    "ux_prompt_templates_purpose_active",
+    PromptTemplate.purpose,
+    unique=True,
+    sqlite_where=(PromptTemplate.is_active == True),  # type: ignore[arg-type]
+    postgresql_where=(PromptTemplate.is_active == True),  # type: ignore[arg-type]
+)
+

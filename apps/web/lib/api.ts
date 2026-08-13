@@ -187,6 +187,19 @@ export function setAdminStyleRecommended(styleId: string, isRecommended: boolean
   });
 }
 
+export async function updateStyleProfile(
+  styleId: string,
+  payload: { name: string; description?: string | null }
+): Promise<import("./types").StyleProfile> {
+  const response = await fetch(`${apiBase()}/v1/style-profiles/${styleId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<import("./types").StyleProfile>(response);
+}
+
 // ---------- 消息中心：管理后台 ----------
 
 export function fetchAdminMessages(params: { page?: number; page_size?: number; category?: string; status?: string } = {}): Promise<import("./types").AdminMessagePage> {
@@ -276,4 +289,66 @@ export async function markAllMessagesRead(): Promise<{ status: string; marked: n
   return parseJson(
     await fetch(`${apiBase()}/v1/messages/read-all`, { method: "POST", credentials: "include" })
   );
+}
+
+// ---------- 自由写作：优化提示词 ----------
+
+/** 优化提示词：把一句简短想法扩写成完整写作需求，固定扣 1 积分。模型失败后端回退原文。 */
+export async function fetchOptimizePrompt(prompt: string): Promise<{ optimized_prompt: string }> {
+  const response = await fetch(`${apiBase()}/v1/optimize-prompt`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  return parseJson<{ optimized_prompt: string }>(response);
+}
+
+// ---------- 后台：提示词模板（仅 optimize_prompt 用途） ----------
+
+export type AdminPromptTemplate = {
+  id: string;
+  name: string;
+  purpose: string;
+  system_prompt: string;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export function fetchAdminPromptTemplates(): Promise<{ items: AdminPromptTemplate[] }> {
+  return adminFetch("/prompt-templates");
+}
+
+export function createAdminPromptTemplate(payload: {
+  name: string;
+  system_prompt: string;
+  is_active?: boolean;
+}): Promise<AdminPromptTemplate> {
+  return adminFetch<AdminPromptTemplate>("/prompt-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      name: payload.name,
+      system_prompt: payload.system_prompt,
+      is_active: payload.is_active ?? true,
+    }),
+  });
+}
+
+export function updateAdminPromptTemplate(
+  id: string,
+  payload: { name?: string; system_prompt?: string; is_active?: boolean }
+): Promise<AdminPromptTemplate> {
+  return adminFetch<AdminPromptTemplate>(`/prompt-templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminPromptTemplate(id: string): Promise<{ status: string }> {
+  return adminFetch(`/prompt-templates/${id}`, { method: "DELETE" });
+}
+
+export function setAdminPromptTemplateActive(id: string): Promise<AdminPromptTemplate> {
+  return adminFetch<AdminPromptTemplate>(`/prompt-templates/${id}/set-active`, { method: "POST" });
 }

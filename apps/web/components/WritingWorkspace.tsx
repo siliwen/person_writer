@@ -27,6 +27,7 @@ import { summarizeStyleDraft } from "@/lib/styleDraft";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./Sidebar";
 import { DashboardView } from "./DashboardView";
+import type { FreeWritePayload } from "./FreeWriteBox";
 import { StylesView } from "./StylesView";
 import { NewStyleModal } from "./NewStyleModal";
 import { EditStyleModal } from "./EditStyleModal";
@@ -59,7 +60,7 @@ export function WritingWorkspace() {
 function WorkspaceInner() {
   const { currentUser, setCurrentUser, requireAuth, openAuth, logout: authLogout } = useAuth();
 
-  const [currentView, setCurrentView] = useState<ViewName>("styles");
+  const [currentView, setCurrentView] = useState<ViewName>("dashboard");
   const [settingsInitialTab, setSettingsInitialTab] = useState<"profile" | "security" | "usage" | "privacy">("profile");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [newStyleModalOpen, setNewStyleModalOpen] = useState(false);
@@ -93,6 +94,8 @@ function WorkspaceInner() {
   const [analysisError, setAnalysisError] = useState("");
   const [confirmError, setConfirmError] = useState("");
   const [writingError, setWritingError] = useState("");
+  // 是否处于「自由写作（无风格）」模式：从首页 FreeWriteBox 生成进入写作视图时置 true。
+  const [freeWriteMode, setFreeWriteMode] = useState(false);
   const [deleteStyleError, setDeleteStyleError] = useState("");
 
   // Edit style modal state
@@ -139,6 +142,7 @@ function WorkspaceInner() {
       setEvaluation(null);
       setGenerationCount(0);
       setQuota(null);
+      setFreeWriteMode(false);
       setCurrentView("styles");
       setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
     }
@@ -244,6 +248,7 @@ function WorkspaceInner() {
 
   function handleStartWriting(styleId: string) {
     setSelectedStyleId(styleId);
+    setFreeWriteMode(false);
     setCurrentView("writing");
     // 从风格库（我的风格/推荐风格）进入写作页时，清空上次生成的文章，
     // 避免右侧仍显示旧文章内容。
@@ -577,6 +582,77 @@ function WorkspaceInner() {
     }
   }
 
+  async function handleFreeWrite(payload: FreeWritePayload) {
+    setWritingError("");
+    if (!payload.brief) {
+      setWritingError("请填写写作需求。");
+      return;
+    }
+    // 生成前预校验：等级长度上限与积分余额（后端会再次校验，这里提供即时反馈）
+    if (quota) {
+      const chars = parseTargetLengthChars(payload.targetLength);
+      const tier = quota.tier;
+      if (tier.max_article_length && tier.max_article_length > 0 && chars > tier.max_article_length) {
+        setWritingError(`当前等级单篇文章最大长度为 ${tier.max_article_length} 字，请缩短或升级会员。`);
+        return;
+      }
+      const estimated = estimateArticlePoints(chars, quota.article_length_brackets);
+      if (quota.points_balance < estimated) {
+        setWritingError(
+          `积分不足，本次生成预计需要 ${estimated} 积分，当前剩余 ${quota.points_balance} 积分。可在「设置 → 用量与额度」查看或升级会员。`
+        );
+        return;
+      }
+    }
+    setBusyAction("writing");
+    const isFree = payload.styleProfileId === "";
+    setFreeWriteMode(isFree);
+    setSelectedStyleId(payload.styleProfileId); // 自由写作为空
+    setCurrentView("writing");
+    const nextGenerationCount = generationCount + 1;
+    setStatus(`正在${isFree ? "按自由写作" : "按选定风格"}生成第 ${nextGenerationCount} 版文章……`);
+    try {
+      const response = await fetch(`${apiBase()}/v1/writing-tasks`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          style_profile_id: payload.styleProfileId,
+          requested_mode: "style_prompt_only",
+          task: {
+            genre: payload.genre,
+            task_type: "新写",
+            title: payload.title,
+            brief: payload.brief,
+            target_length: payload.targetLength,
+            target_reader: "普通读者",
+            must_include: "",
+            must_avoid: "",
+            eval_focus: "任务完成度、自然段可编辑性",
+            style_intensity: "balanced",
+          },
+        }),
+      });
+      const body = await parseJson<{ document: WritingDocument; evaluation?: { grade: string } | null }>(response);
+      setDocument(body.document);
+      setGenerationCount(nextGenerationCount);
+      setStatus(
+        `第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`
+      );
+      void loadQuota();
+      void loadUnread();
+      // 自由写作文章不鉴评，跳过拉取报告
+      if (!isFree) void loadEvaluation(body.document);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWritingError(`本次生成失败。原因：${message}`);
+      setStatus(`生成失败：${message}`);
+      setFreeWriteMode(false);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleSaveDocument(): Promise<void> {
     if (!document) {
       throw new Error("当前没有可保存的文章");
@@ -786,8 +862,15 @@ function WorkspaceInner() {
     await parseJson<{ user: CurrentUser }>(response);
   }
 
+  function handleSelectStyleFromWriting(styleId: string) {
+    setSelectedStyleId(styleId);
+    if (styleId) setFreeWriteMode(false);
+  }
+
   function handleNavigate(view: ViewName) {
     setCurrentView(view);
+    // 离开写作视图时退出自由写作模式，避免状态残留
+    if (view !== "writing") setFreeWriteMode(false);
   }
 
   const viewMeta = viewTitles[currentView];
@@ -928,8 +1011,11 @@ function WorkspaceInner() {
               styles={styles}
               savedDocuments={savedDocuments}
               generationCount={generationCount}
+              quota={quota}
+              generating={busyAction === "writing"}
               onNavigate={handleNavigate}
               onOpenDocument={handleOpenDocument}
+              onFreeWrite={handleFreeWrite}
             />
           ) : null}
 
@@ -952,7 +1038,8 @@ function WorkspaceInner() {
               styles={styles}
               selectedStyleId={selectedStyleId}
               quota={quota}
-              onSelectStyle={setSelectedStyleId}
+              freeWriteMode={freeWriteMode}
+              onSelectStyle={handleSelectStyleFromWriting}
               document={document}
               generationCount={generationCount}
               busyAction={busyAction}
