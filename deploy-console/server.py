@@ -10,14 +10,12 @@
   GET  /api/status    -> {running, exit_code, log_path}
   GET  /api/log?lines=N -> 返回最近 N 行日志（默认 200）
 """
-from __future__ import annotations
-
 import hashlib
 import json
 import os
 import subprocess
 import tarfile
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -171,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server = HTTPServer(("0.0.0.0", PORT), Handler)
     print(f"临时更新控制台已启动: http://<ECS_IP>:{PORT}/")
     print(f"  更新包目录: {INCOMING}")
     print(f"  日志文件:   {LOG_PATH}")
