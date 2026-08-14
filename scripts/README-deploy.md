@@ -101,12 +101,12 @@ sudo chown -R <APP_USER>:<APP_USER> /opt/moxx/apps /opt/moxx/scripts
 cd /opt/moxx/apps/api && .venv/bin/pip install -r requirements.txt && sudo systemctl restart moxx-api
 
 # 5) 前端（有改动时重装 + 构建 + 重启）
-cd /opt/moxx/apps/web && npm install && npm run build && sudo systemctl restart moxx-web
+cd /opt/moxx/apps/web && npm install && NEXT_PUBLIC_API_BASE_URL=/api npm run build && sudo systemctl restart moxx-web
 ```
 
 ### 方式 B：git pull（仅当 /opt/moxx 当初是 git clone 或已 git init）
 ```bash
-cd /opt/moxx && git pull && cd apps/web && npm install && npm run build && sudo systemctl restart moxx-web
+cd /opt/moxx && git pull && cd apps/web && npm install && NEXT_PUBLIC_API_BASE_URL=/api npm run build && sudo systemctl restart moxx-web
 # 后端依赖有变更时：cd /opt/moxx/apps/api && .venv/bin/pip install -r requirements.txt && sudo systemctl restart moxx-api
 ```
 

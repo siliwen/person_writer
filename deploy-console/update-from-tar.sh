@@ -69,7 +69,7 @@ cd "$API"
 
 echo "[5/6] 安装依赖并构建前端"
 cd "$API" && .venv/bin/pip install -r requirements.txt || true
-cd "$WEB" && npm install && npm run build
+cd "$WEB" && npm install && NEXT_PUBLIC_API_BASE_URL=/api npm run build
 
 echo "[6/6] 重启服务与健康检查"
 systemctl daemon-reload
