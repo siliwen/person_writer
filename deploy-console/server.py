@@ -26,6 +26,9 @@ TAR = os.path.join(INCOMING, "moxx-deploy.tar.gz")
 SCRIPT = os.path.join(HERE, "update-from-tar.sh")
 LOG_PATH = os.path.join(MOXX_ROOT, "update-console.log")
 
+# 启动时自动创建 incoming 目录（用户只需把 tar 包丢进去）
+os.makedirs(INCOMING, exist_ok=True)
+
 proc = None  # 当前运行的更新子进程
 
 
