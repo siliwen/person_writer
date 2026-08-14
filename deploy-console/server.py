@@ -26,7 +26,7 @@ PORT = int(os.environ.get("PORT", "9000"))
 INCOMING = os.path.join(MOXX_ROOT, "incoming")
 TAR = os.path.join(INCOMING, "moxx-deploy.tar.gz")
 SCRIPT = os.path.join(HERE, "update-from-tar.sh")
-LOG_PATH = os.path.join(MOX_ROOT := MOXX_ROOT, "update-console.log")
+LOG_PATH = os.path.join(MOXX_ROOT, "update-console.log")
 
 proc = None  # 当前运行的更新子进程
 
