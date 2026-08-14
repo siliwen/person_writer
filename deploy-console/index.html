@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>生产更新控制台</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --border:#e2e2e6; --text:#1a1a1a; --muted:#666; --accent:#534ab7; --ok:#1d9e75; --bad:#e24b4a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:820px; margin:40px auto; padding:0 16px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  button { font:inherit; padding:9px 16px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:8px; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; border:1px solid var(--border); color:var(--muted); }
+  .badge.run { color:var(--accent); border-color:var(--accent); }
+  .badge.ok { color:var(--ok); border-color:var(--ok); }
+  .badge.bad { color:var(--bad); border-color:var(--bad); }
+  pre { background:#1e1e22; color:#e6e6e6; border-radius:8px; padding:12px 14px; height:300px; overflow:auto; font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; margin:0; }
+  .kv { display:grid; grid-template-columns:160px 1fr; gap:4px 12px; font-size:13px; }
+  .kv b { color:var(--muted); font-weight:400; }
+  code { background:#f0eefc; color:#3c3489; padding:1px 6px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>生产更新控制台</h1>
+  <p class="sub">临时工具 · 仅本人使用 · 用完删除本目录并结束进程</p>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <span id="status" class="badge">空闲</span>
+        <span id="ver" class="badge">版本未知</span>
+      </div>
+      <div class="row">
+        <button id="btnCheck">检查更新包</button>
+        <button id="btnUpdate" class="ghost">执行更新</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="kv" id="info">
+      <b>当前版本</b><span>—</span>
+      <b>待更新版本</b><span>—</span>
+      <b>需数据库迁移</b><span>—</span>
+      <b>包大小</b><span>—</span>
+      <b>SHA256</b><span>—</span>
+      <b>磁盘剩余</b><span>—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <b>执行日志</b>
+      <span id="logState" class="badge">未开始</span>
+    </div>
+    <pre id="log">(暂无日志)</pre>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null;
+
+function setStatus(kind, text) {
+  const el = $("status");
+  el.className = "badge" + (kind ? " " + kind : "");
+  el.textContent = text;
+}
+
+async function check() {
+  $("btnCheck").disabled = true;
+  try {
+    const r = await fetch("/api/check", { method: "POST" });
+    const d = await r.json();
+    renderCheck(d);
+  } catch (e) {
+    alert("检查失败：" + e);
+  } finally {
+    $("btnCheck").disabled = false;
+  }
+}
+
+function renderCheck(d) {
+  const cur = d.current_manifest || {};
+  const inc = d.incoming_manifest || {};
+  const set = (k, v) => {
+    const nodes = $("info").querySelectorAll("b");
+    const map = {};
+    nodes.forEach(n => map[n.textContent] = n.nextElementSibling);
+    if (map[k]) map[k].textContent = v;
+  };
+  set("当前版本", cur.build_commit ? cur.build_commit.slice(0,8) : "（无）");
+  set("待更新版本", inc.build_commit ? inc.build_commit.slice(0,8) : "（无包）");
+  set("需数据库迁移", inc.requires_db_migration ? "是 ⚠" : (inc.build_commit ? "否" : "—"));
+  set("包大小", d.size_bytes ? (d.size_bytes/1024/1024).toFixed(2)+" MB" : "—");
+  set("SHA256", d.sha256 ? d.sha256.slice(0,16)+"…" : "—");
+  set("磁盘剩余", d.disk_free_mb >= 0 ? d.disk_free_mb + " MB" : "—");
+
+  const ver = $("ver");
+  if (cur.build_commit && inc.build_commit) {
+    ver.textContent = cur.build_commit.slice(0,8) + " → " + inc.build_commit.slice(0,8);
+    ver.className = "badge run";
+  } else if (inc.build_commit) {
+    ver.textContent = "新装 " + inc.build_commit.slice(0,8);
+    ver.className = "badge";
+  } else {
+    ver.textContent = "无更新包";
+    ver.className = "badge";
+  }
+  $("btnUpdate").disabled = !inc.build_commit;
+}
+
+async function update() {
+  if (!confirm("确认执行更新？将覆盖解压并迁移数据库（已自动备份）。")) return;
+  $("btnUpdate").disabled = true;
+  $("logState").textContent = "运行中";
+  $("logState").className = "badge run";
+  setStatus("run", "更新中");
+  try {
+    const r = await fetch("/api/update", { method: "POST" });
+    const d = await r.json();
+    if (!d.started) { alert("未能启动：" + (d.error||"未知")); return; }
+  } catch (e) {
+    alert("启动失败：" + e);
+    return;
+  }
+  poll();
+}
+
+async function poll() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/status")).json();
+      const l = await (await fetch("/api/log?lines=400")).json();
+      $("log").textContent = l.text || "(无)";
+      $("log").scrollTop = $("log").scrollHeight;
+      if (!s.running) {
+        clearInterval(timer); timer = null;
+        const ok = s.exit_code === 0;
+        setStatus(ok ? "ok" : "bad", ok ? "更新成功" : "更新失败");
+        $("logState").textContent = ok ? "完成" : "失败";
+        $("logState").className = "badge " + (ok ? "ok" : "bad");
+        $("btnUpdate").disabled = false;
+        check();
+      }
+    } catch (e) { /* ignore transient */ }
+  }, 2000);
+}
+
+$("btnCheck").onclick = check;
+$("btnUpdate").onclick = update;
+check();
+</script>
+</body>
+</html>
