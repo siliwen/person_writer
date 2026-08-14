@@ -60,3 +60,4 @@ home.yaml
 outputs/db_find.txt
 outputs/fw_e2e_user.txt
 outputs/layout.css
+outputs/*.json

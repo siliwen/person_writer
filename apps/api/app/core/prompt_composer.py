@@ -177,24 +177,35 @@ def compose_free_prompt(
     user_parts = [
         "## 写作任务",
         f"- 任务类型：{task.task_type}",
-        f"- 文体：{task.genre}",
+    ]
+    if task.genre and task.genre != "不限":
+        user_parts.append(f"- 文体：{task.genre}")
+    user_parts.extend([
         f"- 标题/主题：{task.title}",
         f"- 需求：{task.brief}",
-        f"- 目标长度：{task.target_length}",
+    ])
+    if task.target_length and task.target_length != "按需求":
+        user_parts.append(f"- 目标长度：{task.target_length}")
+    user_parts.extend([
         f"- 目标读者：{task.target_reader}",
         f"- 必须包含：{task.must_include}",
         f"- 必须避免：{task.must_avoid}",
         f"- 评测重点：{task.eval_focus}",
         "",
         "## 通用写作要求",
-        "严格按指定文体写作，不要混用其他文体特征。",
+    ])
+    if task.genre and task.genre != "不限":
+        user_parts.append("严格按指定文体写作，不要混用其他文体特征。")
+    else:
+        user_parts.append("文体由需求自定，保持全文风格统一即可。")
+    user_parts.extend([
         "避免 AI 常见套话、空泛抒情和宏大口号。",
         "使用自然段组织内容，保持可编辑性。",
         "只输出正文，不要解释 prompt、不要列提纲。",
         "",
         "## 输出要求",
         "只输出正文。不要解释 prompt、不要列提纲、不要声明自己在模仿风格。",
-    ]
+    ])
     return ComposedPrompt(
         mode=policy.mode,
         rag_enabled=False,

@@ -13,7 +13,7 @@ import type {
   ViewName,
   WritingDocument,
 } from "@/lib/types";
-import { EVALUATION_GENRES } from "@/lib/types";
+import { EVALUATION_GENRES, SYSTEM_FREE_WRITE_STYLE_ID } from "@/lib/types";
 import {
   apiBase,
   fetchDocumentEvaluation,
@@ -21,6 +21,7 @@ import {
   fetchUnreadCount,
   parseJson,
   requestDocumentEvaluation,
+  reviseDocument,
 } from "@/lib/api";
 import { estimateArticlePoints, parseTargetLengthChars } from "@/lib/quota";
 import { summarizeStyleDraft } from "@/lib/styleDraft";
@@ -28,6 +29,7 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./Sidebar";
 import { DashboardView } from "./DashboardView";
 import type { FreeWritePayload } from "./FreeWriteBox";
+import { FreeWritingDetailView } from "./FreeWritingDetailView";
 import { StylesView } from "./StylesView";
 import { NewStyleModal } from "./NewStyleModal";
 import { EditStyleModal } from "./EditStyleModal";
@@ -43,6 +45,7 @@ const viewTitles: Record<ViewName, { title: string; subtitle: string }> = {
   dashboard: { title: "工作台", subtitle: "" },
   styles: { title: "选择风格", subtitle: "选择一个风格开始写作，或创建新的风格档案" },
   writing: { title: "写作", subtitle: "按你的风格生成和修改文章" },
+  "free-writing": { title: "自由写作", subtitle: "无风格创作，可继续提出修改要求" },
   reading: { title: "文章详情", subtitle: "查看和修改已保存的文章" },
   articles: { title: "文章库", subtitle: "查看和管理你保存的文章" },
   settings: { title: "设置", subtitle: "管理账号、安全和使用量" },
@@ -103,8 +106,6 @@ function WorkspaceInner() {
   const [editStyleName, setEditStyleName] = useState("");
   const [editProfileJson, setEditProfileJson] = useState("");
   const [editStyleError, setEditStyleError] = useState("");
-
-  const busy = busyAction !== null;
 
   const styleDraftView = useMemo(
     () => summarizeStyleDraft(styleJob?.draft_profile),
@@ -590,7 +591,8 @@ function WorkspaceInner() {
     }
     // 生成前预校验：等级长度上限与积分余额（后端会再次校验，这里提供即时反馈）
     if (quota) {
-      const chars = parseTargetLengthChars(payload.targetLength);
+      const isFreeWrite = payload.styleProfileId === "";
+      const chars = isFreeWrite ? 1200 : parseTargetLengthChars(payload.targetLength);
       const tier = quota.tier;
       if (tier.max_article_length && tier.max_article_length > 0 && chars > tier.max_article_length) {
         setWritingError(`当前等级单篇文章最大长度为 ${tier.max_article_length} 字，请缩短或升级会员。`);
@@ -608,7 +610,8 @@ function WorkspaceInner() {
     const isFree = payload.styleProfileId === "";
     setFreeWriteMode(isFree);
     setSelectedStyleId(payload.styleProfileId); // 自由写作为空
-    setCurrentView("writing");
+    // 自由写作进入独立的无风格详情页（无逐段编辑、底部悬浮修改框）；风格写作仍走 writing 视图
+    setCurrentView(isFree ? "free-writing" : "writing");
     const nextGenerationCount = generationCount + 1;
     setStatus(`正在${isFree ? "按自由写作" : "按选定风格"}生成第 ${nextGenerationCount} 版文章……`);
     try {
@@ -637,7 +640,9 @@ function WorkspaceInner() {
       setDocument(body.document);
       setGenerationCount(nextGenerationCount);
       setStatus(
-        `第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`
+        isFree
+          ? `第 ${nextGenerationCount} 版文章已生成。请在下方输入修改意见，继续优化文章。`
+          : `第 ${nextGenerationCount} 版文章已生成。点击正文里的自然段即可提交修改意见。`
       );
       void loadQuota();
       void loadUnread();
@@ -709,9 +714,42 @@ function WorkspaceInner() {
   function handleOpenDocument(targetDocument: WritingDocument) {
     setDocument(targetDocument);
     setGenerationCount(1);
-    setCurrentView("reading");
+    // 自由写作（无风格）文档也进入独立的无风格详情页（无逐段编辑）
+    if (targetDocument.style_profile_id === SYSTEM_FREE_WRITE_STYLE_ID) {
+      setFreeWriteMode(true);
+      setCurrentView("free-writing");
+    } else {
+      setCurrentView("reading");
+    }
     setStatus(`已打开文章「${targetDocument.title}」。可继续修改或下载。`);
     void loadEvaluation(targetDocument);
+  }
+
+  /** 自由写作详情页：按用户修改意见重生成并覆盖当前文档。 */
+  async function handleReviseDocument(instruction: string): Promise<void> {
+    if (!requireAuth()) return;
+    if (!document) {
+      throw new Error("当前没有可修改的文章");
+    }
+    setWritingError("");
+    setBusyAction("writing");
+    const nextGenerationCount = generationCount + 1;
+    setStatus(`正在根据修改意见重新生成第 ${nextGenerationCount} 版文章……`);
+    try {
+      const updated = await reviseDocument(document.id, instruction);
+      setDocument(updated);
+      setGenerationCount(nextGenerationCount);
+      setStatus(`第 ${nextGenerationCount} 版文章已生成，已覆盖上一版。`);
+      void loadQuota();
+      void loadUnread();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWritingError(`修改失败：${message}`);
+      setStatus(`修改失败：${message}`);
+      throw error;
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function handleUnsaveDocument(documentId: string): Promise<void> {
@@ -869,8 +907,16 @@ function WorkspaceInner() {
 
   function handleNavigate(view: ViewName) {
     setCurrentView(view);
-    // 离开写作视图时退出自由写作模式，避免状态残留
-    if (view !== "writing") setFreeWriteMode(false);
+    // 离开写作 / 自由写作视图时退出自由写作模式，并清空临时文章状态，避免回到首页后仍显示旧文章
+    if (view !== "writing" && view !== "free-writing") {
+      if (freeWriteMode) {
+        setDocument(null);
+        setGenerationCount(0);
+        setEvaluation(null);
+        setStatus("");
+      }
+      setFreeWriteMode(false);
+    }
   }
 
   const viewMeta = viewTitles[currentView];
@@ -988,21 +1034,8 @@ function WorkspaceInner() {
           </div>
         </div>
 
-        {status ? (
-          <div className="status-bar" style={{ margin: "16px auto 0", width: "80vw", maxWidth: "100%" }}>
-            {busy ? "处理中…… " : ""}
-            {status}
-            {modelStatus ? (
-              <span className="model-chip">
-                模型：{modelStatus.mode} / {modelStatus.model_name} / {modelStatus.fallback_behavior}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
         <div
           className={`content-area ${currentView === "writing" || currentView === "reading" ? "wide-content" : ""}`}
-          style={status ? { paddingTop: "8px" } : undefined}
         >
           {currentView === "dashboard" ? (
             <DashboardView
@@ -1053,6 +1086,19 @@ function WorkspaceInner() {
               evaluationLoading={evaluationLoading}
               evaluationError={evaluationError}
               onEvaluate={handleEvaluate}
+            />
+          ) : null}
+
+          {currentView === "free-writing" ? (
+            <FreeWritingDetailView
+              document={document}
+              generationCount={generationCount}
+              busyAction={busyAction}
+              quota={quota}
+              onRevise={handleReviseDocument}
+              onSaveDocument={handleSaveDocument}
+              onDownloadDocument={() => handleDownloadDocument()}
+              onBack={() => handleNavigate("dashboard")}
             />
           ) : null}
 

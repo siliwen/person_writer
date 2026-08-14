@@ -54,6 +54,7 @@ from app.core.mvp_service import (
     list_saved_documents,
     list_style_profiles,
     preview_rewrite_paragraph,
+    revise_document,
     save_document,
     set_default_style_profile,
     update_style_profile,
@@ -67,6 +68,9 @@ from app.core import prompt_template_service
 from app.core.prompt_template_service import DEFAULT_OPTIMIZE_PROMPT
 from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
 from app.core.task_service import InMemoryWritingTaskService
+
+# 自由写作去掉前端文体/字数选择后，用于积分预估的默认字数
+DEFAULT_FREE_WRITE_TARGET_CHARS = 1200
 from app.core.text_parser import extract_upload_text
 from app.database import get_db, init_db
 
@@ -169,6 +173,10 @@ class RewriteParagraphRequest(BaseModel):
 
 class UpdateParagraphRequest(BaseModel):
     content: str
+
+
+class ReviseDocumentRequest(BaseModel):
+    instruction: str = Field(..., min_length=1, max_length=4000)
 
 
 class RegisterRequest(BaseModel):
@@ -578,7 +586,9 @@ def create_writing_task(
 
     if request.style_profile_id == "":
         # 自由写作（无风格生成）：不绑定用户风格档案，走通用写作要求。
-        target_chars = parse_target_length_chars(request.task.target_length)
+        # 前端已去掉字数选择，传入 "按需求" 时按默认字数预估积分。
+        parsed_chars = parse_target_length_chars(request.task.target_length)
+        target_chars = parsed_chars or DEFAULT_FREE_WRITE_TARGET_CHARS
         points = validate_and_price(db, user, ARTICLE_GENERATION, target_chars=target_chars)
         created = create_free_writing(
             db,
@@ -839,6 +849,45 @@ def update_paragraph(
         content=request.content,
     )
     return document_to_dict(document)
+
+
+@app.post("/v1/documents/{document_id}/revise")
+def revise_document_endpoint(
+    document_id: str,
+    request: ReviseDocumentRequest,
+    user: models.User = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """无风格自由写作文章的「继续修改」：按用户修改意见重生成并覆盖当前文档。
+
+    积分按原文 target_length 预估（与生成新文章一致）；不鉴评。
+    """
+    document = get_user_document(db, user_id=user.id, document_id=document_id)
+    task = db.scalar(
+        select(models.WritingTask)
+        .where(models.WritingTask.document_id == document.id, models.WritingTask.user_id == user.id)
+        .order_by(models.WritingTask.created_at.desc())
+    )
+    target_length = (task.requirements.get("target_length") if task else None) or f"约{len(document.content)}字"
+    parsed_chars = parse_target_length_chars(target_length)
+    target_chars = parsed_chars or (
+        DEFAULT_FREE_WRITE_TARGET_CHARS if document.style_profile_id == SYSTEM_FREE_WRITE_STYLE_ID else max(len(document.content), 600)
+    )
+    points = validate_and_price(db, user, ARTICLE_GENERATION, target_chars=target_chars)
+    updated, model_result = revise_document(
+        db, user_id=user.id, document_id=document_id, instruction=request.instruction.strip()
+    )
+    charge(
+        db,
+        user,
+        ARTICLE_GENERATION,
+        points,
+        document_id=updated.id,
+        input_tokens=model_result.input_token_count,
+        output_tokens=model_result.output_token_count,
+        model_name=model_result.model_name,
+    )
+    return document_to_dict(updated)
 
 
 @app.get("/v1/documents/saved")

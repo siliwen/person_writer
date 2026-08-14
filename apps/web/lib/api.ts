@@ -304,6 +304,22 @@ export async function fetchOptimizePrompt(prompt: string): Promise<{ optimized_p
   return parseJson<{ optimized_prompt: string }>(response);
 }
 
+// ---------- 自由写作：继续修改（覆盖当前文档） ----------
+
+/** 自由写作详情页：按用户修改意见重生成文章并覆盖当前文档，返回更新后的文档。 */
+export async function reviseDocument(
+  documentId: string,
+  instruction: string
+): Promise<import("./types").WritingDocument> {
+  const response = await fetch(`${apiBase()}/v1/documents/${documentId}/revise`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+  return parseJson<import("./types").WritingDocument>(response);
+}
+
 // ---------- 后台：提示词模板（仅 optimize_prompt 用途） ----------
 
 export type AdminPromptTemplate = {

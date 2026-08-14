@@ -20,6 +20,8 @@ type DocumentReaderProps = {
   onBack?: () => void;
   /** 段落 AI 重写将消耗的积分；不传则重写按钮不展示积分。 */
   paragraphRewritePoints?: number | null;
+  /** 只读模式：隐藏段落编辑按钮、不可点击、不显示等级锁定横幅（用于无风格自由写作详情页）。 */
+  readOnly?: boolean;
 };
 
 export function DocumentReader({
@@ -36,6 +38,7 @@ export function DocumentReader({
   showBackButton = false,
   onBack,
   paragraphRewritePoints,
+  readOnly = false,
 }: DocumentReaderProps) {
   const { requireAuth } = useAuth();
   const [rewriteParagraph, setRewriteParagraph] = useState<DocumentParagraph | null>(null);
@@ -105,7 +108,7 @@ export function DocumentReader({
   }
 
   return (
-    <div className="document-reader">
+    <div className={`document-reader ${readOnly ? "read-only" : ""}`}>
       {showBackButton ? (
         <div className="reader-back-bar">
           <button className="btn btn-ghost btn-sm" type="button" onClick={onBack}>
@@ -147,7 +150,7 @@ export function DocumentReader({
           </div>
         </div>
         {actionMessage ? <p className="document-action-message">{actionMessage}</p> : null}
-        {!canRewrite ? (
+        {!canRewrite && !readOnly ? (
           <p className="document-action-message document-action-locked">
             当前等级不支持段落重写（免费版限制），升级会员后可逐段精修。
           </p>
@@ -155,23 +158,25 @@ export function DocumentReader({
         {doc.paragraphs.map((paragraph) => (
           <div
             key={paragraph.id}
-            className={`paragraph-block ${rewriteParagraph?.id === paragraph.id ? "active" : ""} ${canRewrite ? "" : "locked"}`}
+            className={`paragraph-block ${rewriteParagraph?.id === paragraph.id ? "active" : ""} ${(canRewrite && !readOnly) ? "" : "locked"}`}
             onClick={() => {
-              if (canRewrite) setRewriteParagraph(paragraph);
+              if (canRewrite && !readOnly) setRewriteParagraph(paragraph);
             }}
           >
-            <button
-              className="paragraph-edit-btn"
-              type="button"
-              disabled={!canRewrite}
-              title={canRewrite ? "修改这一段" : "当前等级不支持重写，请升级会员"}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (canRewrite) setRewriteParagraph(paragraph);
-              }}
-            >
-              {canRewrite ? "修改这一段" : "升级后可重写"}
-            </button>
+            {readOnly ? null : (
+              <button
+                className="paragraph-edit-btn"
+                type="button"
+                disabled={!canRewrite}
+                title={canRewrite ? "修改这一段" : "当前等级不支持重写，请升级会员"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (canRewrite) setRewriteParagraph(paragraph);
+                }}
+              >
+                {canRewrite ? "修改这一段" : "升级后可重写"}
+              </button>
+            )}
             <p>{paragraph.content}</p>
             <span className="paragraph-meta">第 {paragraph.position} 段 · 重写 {paragraph.rewrite_count} 次</span>
           </div>

@@ -56,11 +56,6 @@ export function DashboardView({
 
   return (
     <div className="dashboard">
-      <header className="dashboard-header">
-        <h1 className="dashboard-title">欢迎回来，{displayName}</h1>
-        <p className="dashboard-subtitle">这是你的个人写作工作台概览。</p>
-      </header>
-
       <FreeWriteBox quota={quota} styles={styles} generating={generating} onFreeWrite={onFreeWrite} />
 
       <section className="metric-grid">

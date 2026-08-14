@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { QuotaView, StyleProfile } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { fetchOptimizePrompt } from "@/lib/api";
-import { estimateArticlePoints, parseTargetLengthChars } from "@/lib/quota";
+import { estimateArticlePoints } from "@/lib/quota";
 
-/** 自由写作支持的文体（与后台 GENERATION 策略对齐的子集）。 */
-const FREE_WRITE_GENRES = ["散文", "诗歌", "杂文", "故事"] as const;
-const FREE_WRITE_LENGTHS = ["800字", "1200字", "2000字"] as const;
+/** 自由写作去掉文体/字数选择后，内部固定传给后端的占位值。 */
+const FREE_WRITE_GENRE = "不限";
+const FREE_WRITE_TARGET_LENGTH = "按需求";
+/** 无字数选择时，按默认 1200 字预估积分。 */
+const DEFAULT_ESTIMATE_CHARS = 1200;
 
 const PLACEHOLDERS = [
   "例如：写一篇关于街角旧书店的散文，1200字，温暖克制",
@@ -37,9 +39,9 @@ export function FreeWriteBox({ quota, styles: _styles, generating, onFreeWrite }
   const { requireAuth } = useAuth();
 
   const [promptText, setPromptText] = useState("");
-  const [genre, setGenre] = useState<string>("散文");
-  const [targetLength, setTargetLength] = useState<string>("1200字");
-  // 自由写作固定不绑定个人风格
+  // 自由写作固定不绑定个人风格，文体/字数由用户在需求中描述，不再提供选择器。
+  const genre = FREE_WRITE_GENRE;
+  const targetLength = FREE_WRITE_TARGET_LENGTH;
   const styleProfileId = "";
   const [optimizing, setOptimizing] = useState(false);
   const [optimized, setOptimized] = useState(false);
@@ -58,25 +60,14 @@ export function FreeWriteBox({ quota, styles: _styles, generating, onFreeWrite }
 
   const estimate = useMemo(() => {
     if (!quota) return { points: 0, blocked: false, overLength: false, insufficient: false };
-    const chars = parseTargetLengthChars(targetLength);
-    const points = estimateArticlePoints(chars, quota.article_length_brackets);
-    const overLength = quota.tier.max_article_length > 0 && chars > quota.tier.max_article_length;
+    const points = estimateArticlePoints(DEFAULT_ESTIMATE_CHARS, quota.article_length_brackets);
+    const overLength = false;
     const insufficient = quota.points_balance < points;
     return { points, blocked: overLength || insufficient, overLength, insufficient };
-  }, [quota, targetLength]);
+  }, [quota]);
 
   const optimizeCost = 1; // 优化提示词固定 1 积分
   const canOptimize = !optimizing && !generating && !!quota && quota.points_balance >= optimizeCost;
-
-  function handleGenreChange(next: string) {
-    setGenre(next);
-    setTargetLength((current) => {
-      if (current === "1200字" || current === "12行") {
-        return next === "诗歌" ? "12行" : "1200字";
-      }
-      return current;
-    });
-  }
 
   async function handleOptimize() {
     setOptimizeError("");
@@ -164,40 +155,6 @@ export function FreeWriteBox({ quota, styles: _styles, generating, onFreeWrite }
       </div>
 
       <div className="free-write-config-row">
-        <div className="free-write-selects">
-          <label className="free-write-select-pill">
-            <span className="free-write-select-prefix">文体：</span>
-            <span className="free-write-select-value">{genre}</span>
-            <span className="free-write-select-arrow" aria-hidden>▼</span>
-            <select
-              value={genre}
-              onChange={(e) => handleGenreChange(e.target.value)}
-            >
-              {FREE_WRITE_GENRES.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="free-write-select-pill">
-            <span className="free-write-select-prefix">字数：</span>
-            <span className="free-write-select-value">{targetLength}</span>
-            <span className="free-write-select-arrow" aria-hidden>▼</span>
-            <select
-              value={targetLength}
-              onChange={(e) => setTargetLength(e.target.value)}
-            >
-              {FREE_WRITE_LENGTHS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-              {genre === "诗歌" ? <option value="12行">12行</option> : null}
-            </select>
-          </label>
-        </div>
-
         <div className="free-write-actions">
           <button
             type="button"

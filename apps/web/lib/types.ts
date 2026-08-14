@@ -72,6 +72,7 @@ export type WritingDocument = {
   id: string;
   title: string;
   genre: string;
+  style_profile_id: string;
   content: string;
   paragraphs: DocumentParagraph[];
   is_saved?: boolean;
@@ -81,8 +82,11 @@ export type WritingDocument = {
 
 export type BusyAction = "upload" | "analysis" | "confirm" | "delete_style" | "edit_style" | "set_default" | "writing" | "rewrite" | "auth" | null;
 export type StartMode = "create_style" | "use_existing";
-export type ViewName = "dashboard" | "styles" | "writing" | "reading" | "articles" | "settings" | "admin";
+export type ViewName = "dashboard" | "styles" | "writing" | "reading" | "free-writing" | "articles" | "settings" | "admin";
 export type AuthMode = "login" | "register";
+
+/** 自由写作（无风格）文档挂载的系统占位风格 id，与后端 constants.SYSTEM_FREE_WRITE_STYLE_ID 保持一致。 */
+export const SYSTEM_FREE_WRITE_STYLE_ID = "system_free_write";
 
 /** 会员等级配置（来自后端 membership_tiers 表，代码只读取不写死）。 */
 export type MembershipTierInfo = {

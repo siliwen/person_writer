@@ -553,6 +553,108 @@ def update_paragraph_content(
     return document
 
 
+def revise_document(
+    db: Session,
+    *,
+    user_id: str,
+    document_id: str,
+    instruction: str,
+) -> tuple[models.Document, ModelResult]:
+    """无风格自由写作文章的「继续修改」：用当前文章 + 原始写作要求 + 新修改意见重生成，覆盖当前文档。
+
+    旧段落会被删除（关系级 delete-orphan）并以新段落覆盖；新建一条 task_type=改写 的
+    WritingTask 用于审计。自由写作不鉴评。返回更新后的文档与本次模型结果（供积分扣减）。
+    """
+    document = get_user_document(db, user_id=user_id, document_id=document_id)
+    task = db.scalar(
+        select(models.WritingTask)
+        .where(models.WritingTask.document_id == document.id, models.WritingTask.user_id == user_id)
+        .order_by(models.WritingTask.created_at.desc())
+    )
+    requirements = task.requirements if task else {}
+    genre = document.genre
+    title = document.title
+    target_length = requirements.get("target_length") or f"约 {len(document.content)} 字"
+    original_brief = (task.brief if task else "") or ""
+
+    system_prompt = (
+        "你是个人风格写作 Agent。你的任务是根据用户给出的修改意见，重写整篇文章。"
+        "严格遵循原文的写作要求（文体、标题、大体长度），只依据修改意见调整，不额外发挥、不解释过程。"
+        "直接输出新的文章正文，用空行分隔自然段，不要任何前缀、标题或说明文字。"
+    )
+    user_prompt = (
+        "## 原始写作要求\n"
+        f"- 文体：{genre}\n"
+        f"- 标题/主题：{title}\n"
+        f"- 目标长度：{target_length}\n"
+        f"- 原始需求：{original_brief}\n\n"
+        "## 当前文章\n"
+        f"{document.content}\n\n"
+        "## 用户的修改意见\n"
+        f"{instruction}\n\n"
+        "请根据以上修改意见重新生成完整文章，保持相同文体与大体长度，直接输出正文。"
+    )
+    fallback = document.content
+    model_result = ModelGateway().generate(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        purpose="writing",
+        fallback=fallback,
+    )
+    paragraphs = split_paragraphs(model_result.content)
+    if not paragraphs:
+        paragraphs = split_paragraphs(document.content)
+
+    # 覆盖旧段落（relationship 的 delete-orphan 会清理原段落）
+    document.paragraphs = [
+        models.DocumentParagraph(id=new_id("dpara"), position=index, content=paragraph)
+        for index, paragraph in enumerate(paragraphs, start=1)
+    ]
+    document.content = "\n\n".join(paragraphs)
+    document.updated_at = models.utc_now()
+
+    writing_task = models.WritingTask(
+        id=new_id("task"),
+        user_id=user_id,
+        style_profile_id=document.style_profile_id,
+        document_id=document.id,
+        status="completed",
+        genre=genre,
+        title=title,
+        brief=f"改写：{instruction}",
+        effective_mode="revise",
+        rag_enabled=False,
+        prompt_version="revise_v1",
+        requirements={
+            "genre": genre,
+            "task_type": "改写",
+            "title": title,
+            "target_length": target_length,
+            "original_brief": original_brief,
+            "instruction": instruction,
+        },
+        model_provider=model_result.model_provider,
+        model_name=model_result.model_name,
+        input_token_count=model_result.input_token_count,
+        output_token_count=model_result.output_token_count,
+    )
+    usage = models.ModelUsageLog(
+        id=new_id("usage"),
+        user_id=user_id,
+        purpose="writing",
+        model_provider=model_result.model_provider,
+        model_name=model_result.model_name,
+        input_token_count=model_result.input_token_count,
+        output_token_count=model_result.output_token_count,
+    )
+    db.add_all([writing_task, usage])
+    db.commit()
+    db.refresh(document)
+    return document, model_result
+
+
 def save_document(db: Session, *, user_id: str, document_id: str) -> models.Document:
     document = db.scalar(
         select(models.Document)

@@ -1615,11 +1615,20 @@ a {
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 0.5px solid var(--border-default);
+  gap: 16px;
+}
+
+.document-header > div:first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .document-header-title {
   font-size: 16px;
   font-weight: 500;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .document-header-meta {
@@ -4191,7 +4200,7 @@ a {
 .free-write-config-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   margin-top: 14px;
   flex-wrap: wrap;
@@ -4343,4 +4352,84 @@ a {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ===== 自由写作详情页（无风格，独立视图） ===== */
+.free-writing-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 100%;
+}
+
+/* 中间可滚动内容区：撑满剩余空间，保证底部输入框始终贴近视口底部 */
+.free-revise-scroll {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 只读模式下隐藏段落编辑交互与元信息 */
+.document-reader.read-only .paragraph-block {
+  cursor: default;
+}
+
+.document-reader.read-only .paragraph-block:hover,
+.document-reader.read-only .paragraph-block.active {
+  background: transparent;
+  border-color: transparent;
+}
+
+.document-reader.read-only .paragraph-edit-btn,
+.document-reader.read-only .paragraph-meta {
+  display: none;
+}
+
+/* 底部悬浮的修改输入框（与首页 FreeWriteBox 排版对齐） */
+.free-revise-bar {
+  position: sticky;
+  bottom: 12px;
+  margin-top: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-pop, 0 4px 16px rgba(0, 0, 0, 0.06));
+}
+
+.free-revise-input {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: inherit;
+  background: var(--bg-input, var(--bg-surface));
+  color: var(--text-primary);
+}
+
+.free-revise-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.free-revise-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.free-revise-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.free-revise-submit {
+  white-space: nowrap;
 }

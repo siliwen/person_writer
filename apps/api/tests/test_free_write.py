@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
 from app.core.model_gateway import ModelGateway, ModelResult
@@ -201,3 +202,115 @@ def test_admin_prompt_template_crud_and_unique_active() -> None:
     anon = TestClient(app)
     denied = anon.get("/v1/admin/prompt-templates")
     assert denied.status_code in (401, 403)
+
+
+def test_free_writing_revise_replaces_document_and_charges(monkeypatch) -> None:
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    _grant_pro(client)
+
+    created = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": "",
+            "task": {
+                "genre": "散文",
+                "title": "街角旧书店",
+                "brief": "温暖克制",
+                "target_length": "1200字",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    doc_body = created.json()["document"]
+    doc_id = doc_body["id"]
+    original_content = doc_body["content"]
+
+    def fake_generate(self, *, messages, purpose, fallback):
+        user_text = messages[1]["content"]
+        if "修改意见" in user_text:
+            return ModelResult(
+                content="这是改写后的全新文章。\n\n第二段也根据意见重写了。",
+                model_provider="mock",
+                model_name="mock-revise",
+                input_token_count=50,
+                output_token_count=40,
+            )
+        return ModelResult(
+            content="原文内容。",
+            model_provider="mock",
+            model_name="mock-writing",
+            input_token_count=30,
+            output_token_count=20,
+        )
+
+    monkeypatch.setattr(ModelGateway, "generate", fake_generate)
+
+    before = client.get("/v1/account/quota").json()["points_balance"]
+    resp = client.post(
+        f"/v1/documents/{doc_id}/revise", json={"instruction": "把结尾写得更克制一些"}
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["content"] != original_content
+    assert "改写后" in data["content"]
+    assert len(data["paragraphs"]) == 2
+
+    # 自由写作改写按原文 target_length 扣文章生成积分
+    after = client.get("/v1/account/quota").json()["points_balance"]
+    assert before - after > 0
+
+    # 审计：应新增一条 task_type=改写 的写作任务
+    from app import models
+    from app.database import SessionLocal
+
+    with SessionLocal() as db:
+        tasks = db.scalars(
+            select(models.WritingTask).where(models.WritingTask.document_id == doc_id)
+        ).all()
+        assert any(t.requirements.get("task_type") == "改写" for t in tasks)
+
+
+def test_free_writing_uses_default_pricing_when_target_length_is_auto(monkeypatch) -> None:
+    """无字数选择时，genre='不限'/target_length='按需求' 应正常生成，按默认 1200 字扣积分。"""
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    _grant_pro(client)
+
+    captured: dict[str, Any] = {}
+
+    def fake_generate(self, *, messages, purpose, fallback):
+        captured["user_prompt"] = messages[1]["content"]
+        return ModelResult(
+            content="一首关于光的短诗。\n\n第二段。",
+            model_provider="mock",
+            model_name="mock-free-auto",
+            input_token_count=20,
+            output_token_count=20,
+        )
+
+    monkeypatch.setattr(ModelGateway, "generate", fake_generate)
+
+    before = client.get("/v1/account/quota").json()["points_balance"]
+    resp = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": "",
+            "task": {
+                "genre": "不限",
+                "title": "光的褶皱",
+                "brief": "请创作一首现代抒情诗",
+                "target_length": "按需求",
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    after = client.get("/v1/account/quota").json()["points_balance"]
+    # 默认按 1200 字计费，应扣除大于 0 的积分
+    assert before - after > 0
+
+    user_prompt = captured.get("user_prompt", "")
+    # prompt 中不应再强制指定文体和长度，交由用户 brief 决定
+    assert "- 文体：" not in user_prompt
+    assert "- 目标长度：" not in user_prompt
+    assert "文体由需求自定" in user_prompt
