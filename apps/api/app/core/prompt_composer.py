@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.generation_policy import GenerationMode, resolve_generation_policy
-from app.core.prompt_template_service import DEFAULT_FREE_WRITE_PROMPT
+from app.core.prompt_template_service import (
+    DEFAULT_FREE_WRITE_PROMPT,
+    DEFAULT_STYLE_WRITING_PROMPT,
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ def compose_prompt(
     requested_mode: GenerationMode | str | None = None,
     rag_snippets: list[str] | None = None,
     rag_experiment_enabled: bool = True,
+    system_prompt: str | None = None,
 ) -> ComposedPrompt:
     policy = resolve_generation_policy(
         genre=task.genre,
@@ -45,10 +49,7 @@ def compose_prompt(
     )
     prompt_version = "style_profile_rag_v2" if policy.rag_enabled else "style_prompt_only_v1"
     intensity = describe_style_intensity(task.style_intensity)
-    system_prompt = (
-        "你是个人风格写作 Agent。严格完成用户写作任务，不解释过程。"
-        "Style Profile 是最高优先级；只能学习抽象风格机制，不得照搬用户素材、RAG 片段或真实作品原句。"
-    )
+    system_prompt = system_prompt or DEFAULT_STYLE_WRITING_PROMPT
     user_parts = [
         "## 写作任务",
         f"- 任务类型：{task.task_type}",
@@ -163,6 +164,7 @@ def _no_copy_line(style_intensity: str) -> str:
 def compose_free_prompt(
     *,
     task: WritingTaskInput,
+    system_prompt: str | None = None,
 ) -> ComposedPrompt:
     """自由写作（无风格生成）的提示词拼装。
 
@@ -173,17 +175,22 @@ def compose_free_prompt(
         genre=task.genre,
         requested_mode=GenerationMode.STYLE_PROMPT_ONLY,
     )
-    system_prompt = DEFAULT_FREE_WRITE_PROMPT
+    system_prompt = system_prompt or DEFAULT_FREE_WRITE_PROMPT
     user_parts = [
         "## 写作任务",
         f"- 任务类型：{task.task_type}",
     ]
     if task.genre and task.genre != "不限":
         user_parts.append(f"- 文体：{task.genre}")
-    user_parts.extend([
-        f"- 标题/主题：{task.title}",
-        f"- 需求：{task.brief}",
-    ])
+    if task.title:
+        user_parts.extend([
+            f"- 标题/主题：{task.title}",
+            f"- 需求：{task.brief}",
+        ])
+    else:
+        user_parts.extend([
+            f"- 写作要求：{task.brief}",
+        ])
     if task.target_length and task.target_length != "按需求":
         user_parts.append(f"- 目标长度：{task.target_length}")
     user_parts.extend([
@@ -204,6 +211,13 @@ def compose_free_prompt(
         "只输出正文，不要解释 prompt、不要列提纲。",
         "",
         "## 输出要求",
+    ])
+    if not task.title:
+        user_parts.extend([
+            "正文开头先写一行标题，格式严格为「标题：XXX」（XXX 为文章标题，不超过 25 字），独占一行；",
+            "标题行之后空一行，再开始正文。",
+        ])
+    user_parts.extend([
         "只输出正文。不要解释 prompt、不要列提纲、不要声明自己在模仿风格。",
     ])
     return ComposedPrompt(

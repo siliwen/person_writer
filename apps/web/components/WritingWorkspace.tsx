@@ -144,7 +144,7 @@ function WorkspaceInner() {
       setGenerationCount(0);
       setQuota(null);
       setFreeWriteMode(false);
-      setCurrentView("styles");
+      setCurrentView("dashboard");
       setStatus("已退出登录。未登录可以预览工作台，创建资产需要重新登录。");
     }
   }, [currentUser]);
@@ -606,8 +606,14 @@ function WorkspaceInner() {
         return;
       }
     }
-    setBusyAction("writing");
     const isFree = payload.styleProfileId === "";
+    // 开始新的自由写作时清空上次的文章/鉴评/状态，避免进入详情页仍显示旧文章
+    if (isFree) {
+      setDocument(null);
+      setEvaluation(null);
+      setStatus("");
+    }
+    setBusyAction("writing");
     setFreeWriteMode(isFree);
     setSelectedStyleId(payload.styleProfileId); // 自由写作为空
     // 自由写作进入独立的无风格详情页（无逐段编辑、底部悬浮修改框）；风格写作仍走 writing 视图
@@ -1011,6 +1017,8 @@ function WorkspaceInner() {
                           type="button"
                           className="topbar-dropdown-item danger"
                           onClick={() => {
+                            const confirmed = window.confirm("确认退出登录？");
+                            if (!confirmed) return;
                             setUserMenuOpen(false);
                             handleLogout();
                           }}

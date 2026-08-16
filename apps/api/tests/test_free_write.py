@@ -155,53 +155,116 @@ def test_free_writing_document_cannot_be_evaluated() -> None:
     assert "自由写作" in eval_resp.json()["detail"]
 
 
-def test_admin_prompt_template_crud_and_unique_active() -> None:
+def test_admin_prompt_template_list_and_edit_and_reset() -> None:
+    from app.core.constants import ALL_PURPOSES
+
     client = TestClient(app)
     _ensure_logged_in(client)
     _promote_admin(client)
 
-    # 列表应已存在初始化种子（优化提示词）
+    # 初始化 seed：全部用途各一条启用模板
     list_resp = client.get("/v1/admin/prompt-templates")
     assert list_resp.status_code == 200
     items = list_resp.json()["items"]
-    assert any(t["purpose"] == PURPOSE_OPTIMIZE_PROMPT and t["is_active"] for t in items)
+    seeded_purposes = {t["purpose"] for t in items}
+    assert seeded_purposes == set(ALL_PURPOSES)
+    # 每个用途恰好一条且启用
+    for purpose in ALL_PURPOSES:
+        matching = [t for t in items if t["purpose"] == purpose]
+        assert len(matching) == 1
+        assert matching[0]["is_active"] is True
 
-    # 新建一个模板并设为启用，原启用模板应被停用
-    create_resp = client.post(
-        "/v1/admin/prompt-templates",
-        json={"name": "优化提示词-v2", "system_prompt": "你是优化器v2。", "is_active": True},
-    )
-    assert create_resp.status_code == 200, create_resp.text
-    new_id = create_resp.json()["id"]
-
-    list2 = client.get("/v1/admin/prompt-templates").json()["items"]
-    active = [t for t in list2 if t["is_active"]]
-    assert len(active) == 1
-    assert active[0]["id"] == new_id
-
-    # 把旧的重新启用
-    old = next(t for t in list2 if t["id"] != new_id)
-    reenable = client.post(f"/v1/admin/prompt-templates/{old['id']}/set-active")
-    assert reenable.status_code == 200
-    list3 = client.get("/v1/admin/prompt-templates").json()["items"]
-    assert len([t for t in list3 if t["is_active"]]) == 1
-    assert [t for t in list3 if t["is_active"]][0]["id"] == old["id"]
-
-    # 更新与删除
+    # 编辑：仅 system_prompt 可变
+    target = next(t for t in items if t["purpose"] == PURPOSE_OPTIMIZE_PROMPT)
     upd = client.patch(
-        f"/v1/admin/prompt-templates/{old['id']}",
+        f"/v1/admin/prompt-templates/{target['id']}",
         json={"system_prompt": "你是优化器v3，更克制。"},
     )
     assert upd.status_code == 200
     assert "优化器v3" in upd.json()["system_prompt"]
 
-    dele = client.delete(f"/v1/admin/prompt-templates/{new_id}")
-    assert dele.status_code == 200
+    # 重置为代码默认（恢复为内置 DEFAULT_OPTIMIZE_PROMPT 片段）
+    reset = client.post(f"/v1/admin/prompt-templates/{target['id']}/reset")
+    assert reset.status_code == 200
+    assert "需求优化器" in reset.json()["system_prompt"]
 
     # 非管理员应被拒绝
     anon = TestClient(app)
     denied = anon.get("/v1/admin/prompt-templates")
     assert denied.status_code in (401, 403)
+
+
+def test_free_writing_title_parsed_from_model_output(monkeypatch) -> None:
+    """标题由模型生成（标题：XXX 格式），解析后存入 document.title，正文不含标题行。"""
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    _grant_pro(client)
+
+    def fake_generate(self, *, messages, purpose, fallback):
+        return ModelResult(
+            content="标题：街角的旧书店\n\n那家书店藏在巷子尽头，木质招牌被雨水浸得发暗。\n\n每个周末我都会去翻几本旧书，老板从不催促。",
+            model_provider="mock",
+            model_name="mock-free-write",
+            input_token_count=10,
+            output_token_count=60,
+        )
+
+    monkeypatch.setattr(ModelGateway, "generate", fake_generate)
+
+    resp = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": "",
+            "requested_mode": "style_prompt_only",
+            "task": {
+                "genre": "散文",
+                "title": "",
+                "brief": "写一篇关于街角旧书店的散文，温暖克制",
+                "target_length": "1200字",
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    doc = resp.json()["document"]
+    assert doc["title"] == "街角的旧书店"
+    assert "标题：街角的旧书店" not in doc["content"]
+    assert "那家书店藏在巷子尽头" in doc["content"]
+
+
+def test_free_writing_title_fallback_when_model_skips_format(monkeypatch) -> None:
+    """模型未按格式输出标题时，兜底为需求首行（清洗指令前缀，最多 30 字）。"""
+    client = TestClient(app)
+    _ensure_logged_in(client)
+    _grant_pro(client)
+
+    def fake_generate(self, *, messages, purpose, fallback):
+        return ModelResult(
+            content="那家书店藏在巷子尽头，木质招牌被雨水浸得发暗。\n\n每个周末我都会去翻几本旧书。",
+            model_provider="mock",
+            model_name="mock-free-write",
+            input_token_count=10,
+            output_token_count=60,
+        )
+
+    monkeypatch.setattr(ModelGateway, "generate", fake_generate)
+
+    resp = client.post(
+        "/v1/writing-tasks",
+        json={
+            "style_profile_id": "",
+            "requested_mode": "style_prompt_only",
+            "task": {
+                "genre": "散文",
+                "title": "",
+                "brief": "街角旧书店的温暖往事",
+                "target_length": "1200字",
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    doc = resp.json()["document"]
+    assert doc["title"] == "街角旧书店的温暖往事"
+    assert "那家书店藏在巷子尽头" in doc["content"]
 
 
 def test_free_writing_revise_replaces_document_and_charges(monkeypatch) -> None:

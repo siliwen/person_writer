@@ -376,9 +376,9 @@ def _seed_system_styles() -> None:
 
 
 def _seed_prompt_templates() -> None:
-    """确保存在一个启用的 optimize_prompt 提示词模板（后台可编辑，无则写入兜底内容）。"""
+    """确保所有用途都存在一条启用的提示词模板（后台可编辑，无则写入兜底内容）。"""
     from app.core import prompt_template_service
 
     with SessionLocal() as db:
-        prompt_template_service.ensure_default_optimize_template(db)
+        prompt_template_service.ensure_default_prompt_templates(db)
 

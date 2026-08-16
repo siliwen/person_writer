@@ -110,9 +110,8 @@ export function FreeWriteBox({ quota, styles: _styles, generating, onFreeWrite }
       );
       return;
     }
-    // 标题从需求首行推导，避免重复填写
-    const firstLine = brief.split("\n").map((l) => l.trim()).find((l) => l) ?? "自由写作";
-    const title = firstLine.length > 30 ? `${firstLine.slice(0, 30)}…` : firstLine;
+    // 自由写作标题由模型生成（后端解析「标题：XXX」），前端不再从需求推导，传空即可
+    const title = "";
     onFreeWrite({
       genre,
       targetLength,

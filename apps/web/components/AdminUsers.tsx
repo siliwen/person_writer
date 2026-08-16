@@ -230,7 +230,6 @@ function UserManageModal({
           <div className="admin-form-stack">
             <label className="admin-form-label" htmlFor="admin-reason">
               操作原因<span className="admin-required">*</span>
-              <span className="admin-subtle">（本次积分 / 等级调整共用，会记入审计日志）</span>
             </label>
             <input
               id="admin-reason"

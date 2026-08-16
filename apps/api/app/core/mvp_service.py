@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from itertools import count
 from typing import Any
@@ -12,10 +14,16 @@ from docx import Document as DocxDocument
 from docx.shared import Pt, RGBColor
 
 from app import models
-from app.core.constants import SYSTEM_FREE_WRITE_STYLE_ID
+from app.core.constants import (
+    PURPOSE_FREE_WRITING,
+    PURPOSE_REVISE,
+    PURPOSE_STYLE_WRITING,
+    SYSTEM_FREE_WRITE_STYLE_ID,
+)
 from app.core.generation_policy import GenerationMode
 from app.core.model_gateway import ModelGateway, ModelResult
 from app.core.prompt_composer import WritingTaskInput, compose_prompt, compose_free_prompt
+from app.core.prompt_template_service import get_active_prompt_template, DEFAULT_REVISE_PROMPT
 from app.core.style_profile_builder import build_style_profile_v2
 from app.core.text_parser import split_paragraphs
 
@@ -106,8 +114,8 @@ def list_materials(db: Session, *, user_id: str) -> list[models.Material]:
     )
 
 
-def build_style_draft(materials: list[models.Material]) -> dict[str, Any]:
-    return build_style_profile_v2(materials)
+def build_style_draft(db: Session, *, materials: list[models.Material]) -> dict[str, Any]:
+    return build_style_profile_v2(materials, db=db)
 
 
 def create_style_analysis_job(db: Session, *, user_id: str, material_ids: list[str]) -> models.StyleAnalysisJob:
@@ -117,7 +125,7 @@ def create_style_analysis_job(db: Session, *, user_id: str, material_ids: list[s
         user_id=user_id,
         material_ids=[item.id for item in materials],
         status="draft_pending_confirmation",
-        draft_profile=build_style_draft(materials),
+        draft_profile=build_style_draft(db, materials=materials),
     )
     db.add(job)
     db.commit()
@@ -312,11 +320,13 @@ def create_writing(
     rag_snippets: list[str] | None = None,
 ) -> CreatedWriting:
     style = get_active_style(db, user_id=user_id, style_profile_id=style_profile_id)
+    style_writing = get_active_prompt_template(db, PURPOSE_STYLE_WRITING)
     prompt = compose_prompt(
         task=task_input,
         style_profile=style.profile,
         requested_mode=requested_mode or GenerationMode.STYLE_PROMPT_ONLY,
         rag_snippets=rag_snippets,
+        system_prompt=style_writing.system_prompt if style_writing else None,
     )
     fallback = _fallback_article(style_name=style.name, task=task_input)
     model_result = ModelGateway().generate(
@@ -386,6 +396,38 @@ def create_writing(
     return CreatedWriting(task=writing_task, document=document, model_result=model_result)
 
 
+def _parse_free_write_title(raw: str, brief: str) -> tuple[str, str]:
+    """从自由写作模型输出解析「标题：XXX」首行。
+
+    命中：返回 (标题, 去除标题行及紧随空行后的正文)。
+    未命中：返回 (需求首行兜底标题, 原文)，正文保持原样。
+    """
+    lines = raw.split("\n")
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = re.match(r"^标题[：:]\s*(.+?)\s*$", stripped)
+        if match:
+            title = match.group(1).strip()
+            rest = lines[idx + 1 :]
+            while rest and not rest[0].strip():
+                rest.pop(0)
+            return title, "\n".join(rest)
+        break
+    return _title_from_brief(brief), raw
+
+
+def _title_from_brief(brief: str) -> str:
+    """兜底标题：取需求首行，清洗常见写作指令前缀，最多 30 字。"""
+    line = (brief or "").strip().split("\n")[0].strip()
+    if not line:
+        return "自由写作"
+    line = re.sub(r"^写(一篇|一首|一段|个)\s*", "", line)
+    line = re.sub(r"^以[「\"'].*?[」\"']为题\s*", "", line)
+    return line[:30] or "自由写作"
+
+
 def create_free_writing(
     db: Session,
     *,
@@ -399,7 +441,11 @@ def create_free_writing(
     style_profile_id 指向系统占位风格（SYSTEM_FREE_WRITE_STYLE_ID），以满足
     documents.style_profile_id NOT NULL 约束；鉴评逻辑据此跳过无风格文章。
     """
-    prompt = compose_free_prompt(task=task_input)
+    free_writing = get_active_prompt_template(db, PURPOSE_FREE_WRITING)
+    prompt = compose_free_prompt(
+        task=task_input,
+        system_prompt=free_writing.system_prompt if free_writing else None,
+    )
     fallback = _fallback_article(style_name="自由写作", task=task_input)
     model_result = ModelGateway().generate(
         messages=[
@@ -409,12 +455,13 @@ def create_free_writing(
         purpose="writing",
         fallback=fallback,
     )
-    paragraphs = split_paragraphs(model_result.content)
+    title, body = _parse_free_write_title(model_result.content, task_input.brief)
+    paragraphs = split_paragraphs(body)
     document = models.Document(
         id=new_id("doc"),
         user_id=user_id,
         style_profile_id=SYSTEM_FREE_WRITE_STYLE_ID,
-        title=task_input.title,
+        title=title,
         genre=task_input.genre,
         content="\n\n".join(paragraphs),
         status="completed",
@@ -430,7 +477,7 @@ def create_free_writing(
         document_id=document.id,
         status="completed",
         genre=task_input.genre,
-        title=task_input.title,
+        title=title,
         brief=task_input.brief,
         effective_mode=prompt.mode.value,
         rag_enabled=prompt.rag_enabled,
@@ -577,11 +624,8 @@ def revise_document(
     target_length = requirements.get("target_length") or f"约 {len(document.content)} 字"
     original_brief = (task.brief if task else "") or ""
 
-    system_prompt = (
-        "你是个人风格写作 Agent。你的任务是根据用户给出的修改意见，重写整篇文章。"
-        "严格遵循原文的写作要求（文体、标题、大体长度），只依据修改意见调整，不额外发挥、不解释过程。"
-        "直接输出新的文章正文，用空行分隔自然段，不要任何前缀、标题或说明文字。"
-    )
+    revise_tpl = get_active_prompt_template(db, PURPOSE_REVISE)
+    system_prompt = revise_tpl.system_prompt if revise_tpl else DEFAULT_REVISE_PROMPT
     user_prompt = (
         "## 原始写作要求\n"
         f"- 文体：{genre}\n"

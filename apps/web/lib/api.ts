@@ -368,3 +368,7 @@ export function deleteAdminPromptTemplate(id: string): Promise<{ status: string 
 export function setAdminPromptTemplateActive(id: string): Promise<AdminPromptTemplate> {
   return adminFetch<AdminPromptTemplate>(`/prompt-templates/${id}/set-active`, { method: "POST" });
 }
+
+export function resetAdminPromptTemplate(id: string): Promise<AdminPromptTemplate> {
+  return adminFetch<AdminPromptTemplate>(`/prompt-templates/${id}/reset`, { method: "POST" });
+}

@@ -129,7 +129,7 @@ export function AdminConfig() {
 
   return (
     <div>
-      <div className="settings-section-title">会员与配置（均入库，代码不写死）</div>
+      <div className="settings-section-title">会员与配置</div>
       <div className="admin-subnav admin-subnav-compact">
         {configTabs.map((t) => (
           <button

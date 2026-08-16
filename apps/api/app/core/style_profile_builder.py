@@ -5,13 +5,29 @@ import re
 from collections import Counter
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app import models
+from app.core.constants import PURPOSE_STYLE_ANALYSIS
 from app.core.model_gateway import ModelGateway
+from app.core.prompt_template_service import (
+    DEFAULT_STYLE_ANALYSIS_PROMPT,
+    get_active_prompt_template,
+)
 
 
-def build_style_profile_v2(materials: list[models.Material]) -> dict[str, Any]:
+def build_style_profile_v2(
+    materials: list[models.Material],
+    db: Session | None = None,
+) -> dict[str, Any]:
     fallback_profile = build_fallback_style_profile_v2(materials)
-    messages = compose_style_analysis_messages(materials=materials, fallback_profile=fallback_profile)
+    system_prompt = None
+    if db is not None:
+        active = get_active_prompt_template(db, PURPOSE_STYLE_ANALYSIS)
+        system_prompt = active.system_prompt if active else None
+    messages = compose_style_analysis_messages(
+        materials=materials, fallback_profile=fallback_profile, system_prompt=system_prompt
+    )
     try:
         model_result = ModelGateway().generate(
             messages=messages,
@@ -137,6 +153,7 @@ def compose_style_analysis_messages(
     *,
     materials: list[models.Material],
     fallback_profile: dict[str, Any],
+    system_prompt: str | None = None,
 ) -> list[dict[str, str]]:
     stats = fallback_profile["source_stats"]
     paragraphs = []
@@ -155,12 +172,7 @@ def compose_style_analysis_messages(
     return [
         {
             "role": "system",
-            "content": (
-                "你是文学风格分析器和 AI 提示词工程师。你的任务是从多篇作品中提取可复用、可执行、可验证的作者 Style Profile。"
-                "不要写普通文学评论；不要使用“生动、优美、细腻、深刻”等空泛评价词。"
-                f"{output_language_rule}"
-                "只输出严格 JSON，不要输出 Markdown，不要解释过程。"
-            ),
+            "content": system_prompt or DEFAULT_STYLE_ANALYSIS_PROMPT,
         },
         {
             "role": "user",

@@ -19,7 +19,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.core.constants import PURPOSE_ARTICLE_EVALUATION
 from app.core.model_gateway import ModelGateway
+from app.core.prompt_template_service import (
+    DEFAULT_ARTICLE_EVALUATION_PROMPT,
+    get_active_prompt_template,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -428,14 +433,12 @@ def _build_judge_messages(
     style_profile: dict[str, Any] | None,
     requirements: dict[str, Any],
     features: dict[str, Any],
+    system_prompt: str | None = None,
 ) -> list[dict[str, str]]:
     dimension_spec = "\n".join(
         f"- {key}（{label}，权重 {weight}）" for key, label, weight in DIMENSIONS
     )
-    system_prompt = (
-        "你是严格的中文文学编辑与写作评审。你的职责是挑刺而不是恭维：必须指出真实存在的问题，"
-        "不允许给出笼统好评。所有判断都要能落到原文片段上。只输出 JSON，不要任何解释文字或代码块以外的内容。"
-    )
+    system_prompt = system_prompt or DEFAULT_ARTICLE_EVALUATION_PROMPT
     user_prompt = "\n".join(
         [
             f"## 评审文体：{genre}",
@@ -627,6 +630,7 @@ def evaluate_document(
     )
     heuristic = build_heuristic_report(features, genre=document.genre)
 
+    eval_tpl = get_active_prompt_template(db, PURPOSE_ARTICLE_EVALUATION)
     model_result = ModelGateway().generate(
         messages=_build_judge_messages(
             text=document.content,
@@ -634,6 +638,7 @@ def evaluate_document(
             style_profile=style.profile if style else {},
             requirements=requirements,
             features=features,
+            system_prompt=eval_tpl.system_prompt if eval_tpl else None,
         ),
         purpose="article_evaluate",
         fallback=json.dumps(heuristic, ensure_ascii=False),

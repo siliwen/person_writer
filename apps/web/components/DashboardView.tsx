@@ -44,11 +44,11 @@ export function DashboardView({
       <div className="dashboard">
         <header className="dashboard-header">
           <h1 className="dashboard-title">墨小小 · 个人风格写作工作台</h1>
-          <p className="dashboard-subtitle">登录后即可查看你的写作概览、风格档案与已生成文章。</p>
+          <p className="dashboard-subtitle">一句话描述想法，即可生成属于你的文章。登录后保存风格与历史。</p>
         </header>
-        <div className="empty-state">
-          <div className="empty-state-title">还没有登录</div>
-          <div className="empty-state-desc">登录后开始使用：上传作品、创建风格、按你的文风生成文章。</div>
+        <FreeWriteBox quota={quota} styles={styles} generating={generating} onFreeWrite={onFreeWrite} />
+        <div className="dashboard-guest-hint">
+          未登录也可试用：在上方输入想法并点击「生成文章」会先请你登录。登录后可保存风格与文章、管理历史。
         </div>
       </div>
     );
