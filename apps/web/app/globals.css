@@ -4542,6 +4542,7 @@ a {
   flex-direction: column;
 }
 
+
 /* 只读模式下隐藏段落编辑交互与元信息 */
 .document-reader.read-only .paragraph-block {
   cursor: default;
@@ -4558,10 +4559,8 @@ a {
   display: none;
 }
 
-/* 底部悬浮的修改输入框（与首页 FreeWriteBox 排版对齐） */
+/* 底部修改输入框：放在正文末尾，透明背景避免遮挡文章 */
 .free-revise-bar {
-  position: sticky;
-  bottom: 12px;
   margin-top: auto;
   background: transparent;
   border: none;
@@ -4570,7 +4569,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: var(--shadow-pop, 0 4px 16px rgba(0, 0, 0, 0.06));
 }
 
 .free-revise-input {
@@ -4582,7 +4580,7 @@ a {
   font-size: 14px;
   line-height: 1.6;
   font-family: inherit;
-  background: var(--bg-input, var(--bg-surface));
+  background: transparent;
   color: var(--text-primary);
 }
 
