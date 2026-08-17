@@ -1044,7 +1044,7 @@ function WorkspaceInner() {
         </div>
 
         <div
-          className={`content-area ${currentView === "writing" || currentView === "reading" ? "wide-content" : ""}`}
+          className={`content-area ${currentView === "writing" || currentView === "reading" ? "wide-content" : ""} ${currentView === "free-writing" ? "no-scroll" : ""}`}
         >
           {currentView === "dashboard" ? (
             <DashboardView

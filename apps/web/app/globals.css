@@ -222,11 +222,32 @@ a {
   text-decoration: none;
 }
 
+/* ===== 全站隐藏滚动条（保留滚动功能） ===== */
+html,
+body {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge legacy */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 /* ===== App Shell ===== */
 
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -416,9 +437,11 @@ a {
 .main-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
+  overflow: hidden;
 }
 
 .topbar {
@@ -648,16 +671,23 @@ a {
 
 .content-area {
   flex: 1;
+  min-height: 0;
   padding: 24px;
   max-width: 1040px;
   width: 100%;
   margin: 0 auto;
+  overflow-y: auto;
 }
 
 .content-area.wide-content {
   max-width: 80vw;
   padding-left: 0;
   padding-right: 0;
+}
+
+/* 自由写作详情页内部自己管理滚动，外层 content-area 不滚动 */
+.content-area.no-scroll {
+  overflow: hidden;
 }
 
 /* ===== Buttons ===== */
@@ -4533,13 +4563,18 @@ a {
   flex-direction: column;
   gap: 0;
   min-height: 100%;
+  height: 100%;
 }
 
-/* 中间可滚动内容区：撑满剩余空间，保证底部输入框始终贴近视口底部 */
+/* 中间可滚动内容区：限制高度并独立滚动，
+   底边始终比底部输入框顶边高出 50px，避免正文覆盖输入框 */
 .free-revise-scroll {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  margin-bottom: 50px;
 }
 
 
@@ -4559,10 +4594,13 @@ a {
   display: none;
 }
 
-/* 底部修改输入框：放在正文末尾，透明背景避免遮挡文章 */
+/* 底部修改输入框：悬浮固定在底部，不随正文滚动 */
 .free-revise-bar {
-  margin-top: auto;
-  background: transparent;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--bg-surface);
   border: none;
   border-radius: var(--radius-lg);
   padding: 12px 16px;
