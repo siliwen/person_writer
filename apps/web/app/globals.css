@@ -4563,7 +4563,7 @@ a {
   position: sticky;
   bottom: 12px;
   margin-top: auto;
-  background: var(--bg-surface);
+  background: transparent;
   border: none;
   border-radius: var(--radius-lg);
   padding: 12px 16px;
