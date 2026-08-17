@@ -1603,7 +1603,7 @@ a {
 
 .document-display {
   background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
+  border: none;
   border-radius: var(--radius-lg);
   padding: 24px;
 }
@@ -4564,7 +4564,7 @@ a {
   bottom: 12px;
   margin-top: auto;
   background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
+  border: none;
   border-radius: var(--radius-lg);
   padding: 12px 16px;
   display: flex;
