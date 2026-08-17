@@ -38,6 +38,7 @@ import { DocumentReader } from "./DocumentReader";
 import { ArticlesView } from "./ArticlesView";
 import { SettingsView } from "./SettingsView";
 import { AdminPanel } from "./AdminPanel";
+import { SiteFooter } from "./SiteFooter";
 import { MessageCenter } from "./MessageCenter";
 import { EvaluationPanel } from "./EvaluationPanel";
 
@@ -1175,6 +1176,8 @@ function WorkspaceInner() {
 
           {currentView === "admin" ? <AdminPanel onNewStyle={handleOpenNewStyle} /> : null}
         </div>
+
+        <SiteFooter />
       </div>
 
       {newStyleModalOpen ? (

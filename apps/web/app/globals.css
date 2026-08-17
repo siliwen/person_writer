@@ -4571,3 +4571,42 @@ a {
 .free-revise-submit {
   white-space: nowrap;
 }
+
+/* ===== Site Footer（全站备案条）===== */
+.site-footer {
+  flex-shrink: 0;
+  border-top: 0.5px solid var(--border-strong);
+  background: var(--bg-surface);
+  padding: 14px 24px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.site-footer-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.site-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.site-footer a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.site-footer-sep {
+  opacity: 0.45;
+}
+
+.site-footer-copy {
+  color: var(--text-secondary);
+}
