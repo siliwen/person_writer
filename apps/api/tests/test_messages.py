@@ -51,7 +51,7 @@ def msg_env():
 def _register(c: TestClient, username: str, password: str = "password123") -> None:
     c.post(
         "/v1/auth/register",
-        json={"username": username, "password": password, "confirm_password": password},
+        json={"username": username, "password": password, "confirm_password": password, "agreed_terms": True},
     )
 
 

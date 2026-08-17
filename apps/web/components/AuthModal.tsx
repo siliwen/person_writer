@@ -18,6 +18,7 @@ export function AuthModal({ mode, onClose, onSuccess, onModeChange }: AuthModalP
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   // 提交中不允许 ESC 关闭，避免请求半途丢失上下文
   useEscapeClose(onClose, !loading);
@@ -46,6 +47,7 @@ export function AuthModal({ mode, onClose, onSuccess, onModeChange }: AuthModalP
           username: username.trim(),
           password,
           confirm_password: confirmPassword,
+          agreed_terms: agreed,
         }),
       });
       const body = await parseJson<{ user: CurrentUser }>(response);
@@ -77,14 +79,14 @@ export function AuthModal({ mode, onClose, onSuccess, onModeChange }: AuthModalP
             <button
               type="button"
               className={`auth-tab ${mode === "login" ? "active" : ""}`}
-              onClick={() => { onModeChange("login"); setError(""); }}
+              onClick={() => { onModeChange("login"); setError(""); setAgreed(false); }}
             >
               登录
             </button>
             <button
               type="button"
               className={`auth-tab ${mode === "register" ? "active" : ""}`}
-              onClick={() => { onModeChange("register"); setError(""); }}
+              onClick={() => { onModeChange("register"); setError(""); setAgreed(false); }}
             >
               注册
             </button>
@@ -123,10 +125,27 @@ export function AuthModal({ mode, onClose, onSuccess, onModeChange }: AuthModalP
               />
             </div>
           ) : null}
+          {mode === "register" ? (
+            <label className="auth-consent">
+              <input
+                type="checkbox"
+                className="auth-consent-check"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+              />
+              <span className="auth-consent-text">
+                我已阅读并同意
+                <a href="/legal/terms" target="_blank" rel="noopener noreferrer">《用户协议》</a>
+                和
+                <a href="/legal/privacy" target="_blank" rel="noopener noreferrer">《隐私政策》</a>
+                ，知悉我的上传素材与风格档案默认不用于模型训练。
+              </span>
+            </label>
+          ) : null}
           <button
             className="btn btn-primary"
             type="button"
-            disabled={loading}
+            disabled={loading || (mode === "register" && !agreed)}
             onClick={handleSubmit}
             style={{ width: "100%", marginTop: "4px" }}
           >

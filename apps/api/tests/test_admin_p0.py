@@ -39,7 +39,7 @@ def admin_client():
     with TestClient(app) as c:
         c.post(
             "/v1/auth/register",
-            json={"username": "adminuser", "password": "password123", "confirm_password": "password123"},
+            json={"username": "adminuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
         )
         db = SLS()
         user = db.scalar(select(models.User).where(models.User.username == "adminuser"))
@@ -65,7 +65,7 @@ def test_admin_metrics_overview(admin_client: TestClient):
 def test_admin_user_search_and_set_tier(admin_client: TestClient):
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "targetuser", "password": "password123", "confirm_password": "password123"},
+        json={"username": "targetuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
     search = admin_client.get("/v1/admin/users?q=targetuser")
@@ -96,7 +96,7 @@ def test_admin_user_search_and_set_tier(admin_client: TestClient):
 def test_admin_audit_logs_after_points_adjust(admin_client: TestClient):
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "adjustuser", "password": "password123", "confirm_password": "password123"},
+        json={"username": "adjustuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
     uid = next(
@@ -118,7 +118,7 @@ def test_admin_grant_points_not_counted_as_consumption(admin_client: TestClient)
     """管理员补发积分应记为负消耗，不能被仪表盘统计成「本月消耗」。"""
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "grantuser", "password": "password123", "confirm_password": "password123"},
+        json={"username": "grantuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
     uid = next(
@@ -141,7 +141,7 @@ def test_admin_deduct_points_counted_as_consumption(admin_client: TestClient):
     """管理员扣减积分应记为正消耗，并计入本月消耗。"""
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "deductuser", "password": "password123", "confirm_password": "password123"},
+        json={"username": "deductuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
     uid = next(
@@ -211,7 +211,7 @@ def test_admin_user_search_by_tier(admin_client: TestClient):
     # 升级一个用户到 pro，再按 tier 过滤
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "proband", "password": "password123", "confirm_password": "password123"},
+        json={"username": "proband", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
     uid = next(

@@ -24,6 +24,11 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{6,32}$")
 MAINLAND_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# 协议版本（与 10_legal_法律协议 下两份文档保持一致；协议重大更新后同步升版，
+# 注册时把版本号写入 user_consents，便于追溯用户同意的是哪一版）。
+TERMS_VERSION = "v1.0"
+PRIVACY_VERSION = "v1.0"
+
 
 def auth_secret() -> str:
     return os.getenv("AUTH_SECRET", "dev-only-personal-writing-agent-secret")
@@ -74,7 +79,21 @@ def verify_password(password: str, password_hash: str | None) -> bool:
     return hmac.compare_digest(digest.hex(), expected)
 
 
-def register_user(db: Session, *, username: str, password: str, confirm_password: str) -> models.User:
+def register_user(
+    db: Session,
+    *,
+    username: str,
+    password: str,
+    confirm_password: str,
+    agreed_terms: bool = False,
+    client_ip: str | None = None,
+) -> models.User:
+    # 注册前必须显式同意《用户协议》与《隐私政策》——后端强校验，未同意直接拒绝。
+    if not agreed_terms:
+        raise HTTPException(
+            status_code=422,
+            detail="注册前请阅读并同意《用户协议》与《隐私政策》。",
+        )
     normalized_username = validate_username(username)
     validate_password(password)
     if password != confirm_password:
@@ -92,11 +111,29 @@ def register_user(db: Session, *, username: str, password: str, confirm_password
         mode="user",
     )
     db.add(user)
+    db.flush()  # 先拿到 user.id，再写入同意记录，保证同一事务
+    _record_consent(db, user.id, "terms", TERMS_VERSION, client_ip)
+    _record_consent(db, user.id, "privacy", PRIVACY_VERSION, client_ip)
     db.commit()
     db.refresh(user)
     from app.core.points_service import assign_default_tier
 
     return assign_default_tier(db, user)
+
+
+def _record_consent(
+    db: Session, user_id: str, agreement_type: str, version: str, client_ip: str | None
+) -> None:
+    """写入一条协议同意记录（user_consents）。"""
+    db.add(
+        models.UserConsent(
+            id=new_id("consent"),
+            user_id=user_id,
+            agreement_type=agreement_type,
+            version=version,
+            client_ip=client_ip,
+        )
+    )
 
 
 def authenticate_user(db: Session, *, username: str, password: str) -> models.User:

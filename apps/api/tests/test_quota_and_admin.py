@@ -43,7 +43,7 @@ def user_client():
     with TestClient(app) as c:
         c.post(
             "/v1/auth/register",
-            json={"username": "normaluser", "password": "password123", "confirm_password": "password123"},
+            json={"username": "normaluser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
         )
         yield c
     app.dependency_overrides.clear()
@@ -65,7 +65,7 @@ def admin_client():
     with TestClient(app) as c:
         c.post(
             "/v1/auth/register",
-            json={"username": "adminuser", "password": "password123", "confirm_password": "password123"},
+            json={"username": "adminuser", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
         )
         db = SLS()
         user = db.scalar(select(models.User).where(models.User.username == "adminuser"))
@@ -224,7 +224,7 @@ def test_admin_can_manage_tiers_and_adjust_points(admin_client: TestClient):
     assert patched.json()["monthly_points"] == 777
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "adjustme", "password": "password123", "confirm_password": "password123"},
+        json={"username": "adjustme", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     # 注册会覆盖 admin 会话 cookie，需重新登录管理员
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})
@@ -239,7 +239,7 @@ def test_admin_can_manage_tiers_and_adjust_points(admin_client: TestClient):
 def test_admin_usage_filter_by_user(admin_client: TestClient):
     admin_client.post(
         "/v1/auth/register",
-        json={"username": "user_u2", "password": "password123", "confirm_password": "password123"},
+        json={"username": "user_u2", "password": "password123", "confirm_password": "password123", "agreed_terms": True},
     )
     # 注册会覆盖 admin 会话 cookie，需重新登录管理员
     admin_client.post("/v1/auth/login", json={"username": "adminuser", "password": "password123"})

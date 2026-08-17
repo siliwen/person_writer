@@ -29,7 +29,7 @@ def _ensure_logged_in(client: TestClient) -> None:
     username = f"freewriter_{_login_counter:04d}"
     response = client.post(
         "/v1/auth/register",
-        json={"username": username, "password": "writer123", "confirm_password": "writer123"},
+        json={"username": username, "password": "writer123", "confirm_password": "writer123", "agreed_terms": True},
     )
     assert response.status_code == 200
 

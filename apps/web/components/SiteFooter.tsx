@@ -39,6 +39,10 @@ export function SiteFooter() {
           </>
         ) : null}
         <span className="site-footer-sep">·</span>
+        <a href="/legal/terms" target="_blank" rel="noopener noreferrer">用户协议</a>
+        <span className="site-footer-sep">·</span>
+        <a href="/legal/privacy" target="_blank" rel="noopener noreferrer">隐私政策</a>
+        <span className="site-footer-sep">·</span>
         <span className="site-footer-copy">© {year} {SITE_NAME}</span>
       </div>
     </footer>

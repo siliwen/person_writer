@@ -397,3 +397,23 @@ Index(
     postgresql_where=(PromptTemplate.is_active == True),  # type: ignore[arg-type]
 )
 
+
+class UserConsent(Base):
+    """用户协议 / 隐私政策同意记录——注册时强校验并留痕，作为已告知用户的证据。
+
+    agreement_type 取值：terms（用户协议）/ privacy（隐私政策）。
+    每次注册写入两条（各一份）；协议重大更新后用户重新确认时再追加记录，可追溯版本。
+    """
+
+    __tablename__ = "user_consents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    agreement_type: Mapped[str] = mapped_column(String(32), nullable=False)  # terms / privacy
+    version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1.0")
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+Index("ix_user_consents_user_agreement", UserConsent.user_id, UserConsent.agreement_type)
+

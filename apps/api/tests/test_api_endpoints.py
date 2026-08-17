@@ -6,7 +6,7 @@ from app.main import app
 def _login(client: TestClient) -> None:
     response = client.post(
         "/v1/auth/register",
-        json={"username": "endpoint_user", "password": "writer123", "confirm_password": "writer123"},
+        json={"username": "endpoint_user", "password": "writer123", "confirm_password": "writer123", "agreed_terms": True},
     )
     assert response.status_code == 200
 

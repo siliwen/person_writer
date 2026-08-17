@@ -17,7 +17,7 @@ def register_and_login(client, username: str, password: str) -> dict:
     """Register a user and keep the session cookie on the client."""
     r = client.post(
         "/v1/auth/register",
-        json={"username": username, "password": password, "confirm_password": password},
+        json={"username": username, "password": password, "confirm_password": password, "agreed_terms": True},
     )
     assert r.status_code == 200, r.text
     return r.json()["user"]

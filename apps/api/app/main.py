@@ -183,6 +183,8 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     confirm_password: str
+    # 必须显式同意《用户协议》与《隐私政策》，未同意后端拒绝注册。
+    agreed_terms: bool
 
 
 class LoginRequest(BaseModel):
@@ -254,12 +256,14 @@ def model_status() -> dict[str, Any]:
     }
 
 @app.post("/v1/auth/register")
-def register(request: RegisterRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
+def register(payload: RegisterRequest, response: Response, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     user = register_user(
         db,
-        username=request.username,
-        password=request.password,
-        confirm_password=request.confirm_password,
+        username=payload.username,
+        password=payload.password,
+        confirm_password=payload.confirm_password,
+        agreed_terms=payload.agreed_terms,
+        client_ip=request.client.host,
     )
     set_session_cookie(response, user)
     return {"user": user_to_dict(user)}
