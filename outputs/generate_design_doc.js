@@ -67,11 +67,11 @@ const doc = new Document({
       page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } },
     },
     children: [
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: "墨写 · 用量与额度（积分）设计文档", bold: true, size: 40, color: PURPLE, font: "Arial" })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: "墨小小 · 用量与额度（积分）设计文档", bold: true, size: 40, color: PURPLE, font: "Arial" })] }),
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [new TextRun({ text: "个人风格写作 Agent SaaS · v1 草案", size: 22, color: "666666", font: "Arial" })] }),
 
       h1("1. 背景与目标"),
-      p("墨写基于大模型（当前为 Qwen3.7-Plus，风格分析与文章生成共用同一模型）为用户生成具有个人风格的散文、小说、诗歌等。由于模型调用存在真实成本，且不同用户需要差异化的功能与用量，需要一套「用量额度 + 用户等级」体系，实现："),
+      p("墨小小基于大模型（当前为 Qwen3.7-Plus，风格分析与文章生成共用同一模型）为用户生成具有个人风格的散文、小说、诗歌等。由于模型调用存在真实成本，且不同用户需要差异化的功能与用量，需要一套「用量额度 + 用户等级」体系，实现："),
       bullet("对用户：用量透明、按能力付费、长文更划算；"),
       bullet("对平台：限制单用户资源消耗、按等级控制功能权限、保证商业化毛利；"),
       bullet("对工程：额度与具体模型解耦，便于后续换模型或做促销。"),
@@ -163,6 +163,6 @@ const doc = new Document({
 });
 
 Packer.toBuffer(doc).then((buffer) => {
-  fs.writeFileSync("D:/AI_talk/personal_writing_agent_saas/outputs/墨写_用量额度设计文档.docx", buffer);
+  fs.writeFileSync("D:/AI_talk/personal_writing_agent_saas/outputs/墨小小_用量额度设计文档.docx", buffer);
   console.log("docx written:", buffer.length, "bytes");
 });
