@@ -5,6 +5,7 @@ import type { ArticleEvaluation, BusyAction, QuotaView, StyleProfile, WritingDoc
 import { EVALUATION_GENRES, GENRES } from "@/lib/types";
 import { estimateArticlePoints, parseTargetLengthChars } from "@/lib/quota";
 import { useAuth } from "@/lib/auth-context";
+import { fetchOptimizePrompt } from "@/lib/api";
 import { DocumentReader } from "./DocumentReader";
 import { EvaluationPanel } from "./EvaluationPanel";
 
@@ -75,9 +76,42 @@ export function WritingView({
   const [mustInclude, setMustInclude] = useState("具体场景、自然段、克制表达");
   const [mustAvoid, setMustAvoid] = useState("AI 套话、空泛抒情、宏大口号");
 
+  // 提示词优化（与首页无风格写作一致）
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimized, setOptimized] = useState(false);
+  const [optimizeError, setOptimizeError] = useState("");
+  const optimizeCost = 1;
+
   const writingRef = useRef<HTMLDivElement | null>(null);
   const busy = busyAction !== null;
   const isWriting = busyAction === "writing";
+
+  const canOptimize = !optimizing && !busy && !!quota && quota.points_balance >= optimizeCost;
+
+  async function handleOptimize() {
+    setOptimizeError("");
+    if (!requireAuth()) return;
+    const source = brief.trim();
+    if (!source) {
+      setOptimizeError("请先输入写作要求，再点优化提示词。");
+      return;
+    }
+    if (quota && quota.points_balance < optimizeCost) {
+      setOptimizeError("积分不足，无法优化提示词。");
+      return;
+    }
+    setOptimizing(true);
+    try {
+      const res = await fetchOptimizePrompt(source);
+      setBrief(res.optimized_prompt);
+      setOptimized(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOptimizeError(`优化失败：${message}`);
+    } finally {
+      setOptimizing(false);
+    }
+  }
 
   const selectedStyle = useMemo(
     () => styles.find((s) => s.id === selectedStyleId),
@@ -191,7 +225,27 @@ export function WritingView({
             </div>
             <div className="form-field full">
               <label className="form-label">写作要求</label>
-              <textarea className="form-textarea" value={brief} onChange={(e) => setBrief(e.target.value)} />
+              <div className="prompt-optimize-wrap">
+                <textarea
+                  className={`form-textarea ${optimized ? "optimize-flash" : ""}`}
+                  value={brief}
+                  onChange={(e) => {
+                    setBrief(e.target.value);
+                    setOptimized(false);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="prompt-optimize-float"
+                  onClick={handleOptimize}
+                  disabled={!canOptimize}
+                  title={quota ? `消耗 ${optimizeCost} 积分` : "请先登录"}
+                >
+                  {optimizing ? "优化中…" : optimized ? "重新优化" : "优化提示词"}
+                  <span className="prompt-optimize-cost"> · {optimizeCost}积分</span>
+                </button>
+              </div>
+              {optimizeError ? <p className="inline-error">{optimizeError}</p> : null}
             </div>
             <div className="form-field full">
               <label className="form-label">必须包含</label>

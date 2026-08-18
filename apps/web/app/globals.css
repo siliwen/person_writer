@@ -4414,6 +4414,12 @@ body::-webkit-scrollbar,
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* ===== 通用提示词优化浮动按钮（首页无风格写作 + 风格写作共用） ===== */
+.prompt-optimize-wrap {
+  position: relative;
+}
+.prompt-optimize-float,
 .free-write-optimize-float {
   position: absolute;
   right: 12px;
@@ -4427,16 +4433,28 @@ body::-webkit-scrollbar,
   cursor: pointer;
   transition: color 0.15s ease, opacity 0.15s ease;
 }
+.prompt-optimize-float:hover:not(:disabled),
 .free-write-optimize-float:hover:not(:disabled) {
   text-decoration: underline;
 }
+.prompt-optimize-float:disabled,
 .free-write-optimize-float:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.prompt-optimize-cost,
 .free-write-cost {
   opacity: 0.7;
   font-size: 12px;
+}
+/* 风格写作写作要求 textarea 高亮（与首页 optimize-flash 一致） */
+.form-textarea.optimize-flash {
+  border-color: var(--highlight);
+  box-shadow: 0 0 0 3px var(--highlight-ring);
+}
+/* 风格写作 textarea 右侧留出浮动按钮空间，避免文字被按钮遮挡 */
+.prompt-optimize-wrap .form-textarea {
+  padding-right: 96px;
 }
 .free-write-selects {
   display: flex;
